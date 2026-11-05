@@ -82,7 +82,7 @@ const slugify = (text) =>
     .replace(/(^-|-$)/g, '');
 
 const LEADERBOARD_STORAGE_KEY = 'saulguesser_leaderboard';
-const LEADERBOARD_RETENTION_MS = 24 * 60 * 60 * 1000;
+const LEADERBOARD_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const LEADERBOARD_TABLE = 'leaderboard_entries';
 const LEADERBOARD_LIMIT = 100;
 
