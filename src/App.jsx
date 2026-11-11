@@ -185,9 +185,11 @@ function App() {
   const [feedback, setFeedback] = useState(null);
   const [score, setScore] = useState({ correct: 0, total: 0 });
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
+  const [isPlayButtonSpinning, setIsPlayButtonSpinning] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [timeLeft, setTimeLeft] = useState(10);
   const [currentView, setCurrentView] = useState('game');
+  const [viewTransitionPhase, setViewTransitionPhase] = useState('idle');
   const [leaderboard, setLeaderboard] = useState([]);
   const [isLeaderboardLoading, setIsLeaderboardLoading] = useState(true);
   const [leaderboardError, setLeaderboardError] = useState('');
@@ -206,6 +208,8 @@ function App() {
   const nextRoundTimeoutRef = useRef(null);
   const currentSongRef = useRef(null);
   const songDeckRef = useRef([]);
+  const pendingViewRef = useRef(null);
+  const viewTransitionPhaseRef = useRef('idle');
   const maxRounds = 10;
   const isFinished = score.total >= maxRounds;
   const round = score.total < maxRounds ? score.total + 1 : maxRounds;
@@ -216,6 +220,28 @@ function App() {
   const showHeroStartButton = roundStatus === 'ready' && score.total === 0;
   const hasStartedGame = score.total > 0 || isRoundActive;
   const shouldShowRoundPanel = hasStartedGame;
+
+  const transitionToView = (nextView) => {
+    if (nextView === currentView || viewTransitionPhaseRef.current !== 'idle') return;
+
+    pendingViewRef.current = nextView;
+    viewTransitionPhaseRef.current = 'out';
+    setViewTransitionPhase('out');
+  };
+
+  const handleViewTransitionEnd = () => {
+    if (viewTransitionPhaseRef.current === 'out') {
+      setCurrentView(pendingViewRef.current);
+      viewTransitionPhaseRef.current = 'in';
+      setViewTransitionPhase('in');
+      return;
+    }
+
+    if (viewTransitionPhaseRef.current === 'in') {
+      viewTransitionPhaseRef.current = 'idle';
+      setViewTransitionPhase('idle');
+    }
+  };
 
   const pickRandomSong = () => {
     if (songDeckRef.current.length === 0) {
@@ -576,7 +602,19 @@ function App() {
 
   return (
     <div className="sg-app sg-main">
+      <div className="sg-splash-atmosphere" aria-hidden="true">
+        <span className="sg-splash-image sg-splash-image-one" />
+        <span className="sg-splash-image sg-splash-image-two" />
+        <span className="sg-splash-image sg-splash-image-three" />
+      </div>
       <audio ref={audioRef} preload="auto" />
+      {viewTransitionPhase !== 'idle' && (
+        <div
+          className={`sg-view-transition is-${viewTransitionPhase}`}
+          onAnimationEnd={handleViewTransitionEnd}
+          aria-hidden="true"
+        />
+      )}
 
       {roundStatus === 'countdown' && (
         <div className="sg-fullscreen-countdown" aria-live="polite" aria-atomic="true">
@@ -595,14 +633,14 @@ function App() {
           <div className="sg-tabs">
             <button
               type="button"
-              onClick={() => setCurrentView('game')}
+              onClick={() => transitionToView('game')}
               className={`sg-tab ${currentView === 'game' ? 'is-active' : ''}`}
             >
               Hra
             </button>
             <button
               type="button"
-              onClick={() => setCurrentView('leaderboard')}
+              onClick={() => transitionToView('leaderboard')}
               className={`sg-tab ${currentView === 'leaderboard' ? 'is-active' : ''}`}
             >
               Leaderboard
@@ -626,7 +664,7 @@ function App() {
             <div className="sg-section-actions">
               <button
                 type="button"
-                onClick={() => setCurrentView('game')}
+                onClick={() => transitionToView('game')}
                 className="sg-button sg-button-secondary"
               >
                 Zpět do hry
@@ -691,10 +729,16 @@ function App() {
                 <div className="sg-start-panel">
                   <button
                     type="button"
-                    className={`sg-hero-button ${isPlayingPreview ? 'is-playing' : ''}`}
+                    className={`sg-hero-button ${isPlayingPreview ? 'is-playing' : ''} ${isPlayButtonSpinning ? 'is-spinning' : ''}`}
                     onClick={startRoundSequence}
+                    onMouseEnter={() => setIsPlayButtonSpinning(true)}
                   >
-                    <span className="sg-hero-ring" aria-hidden="true" />
+                    <span
+                      className="sg-hero-image"
+                      aria-hidden="true"
+                      style={{ backgroundImage: `url("${getAssetUrl('/Images/play-btn.jpg')}")` }}
+                      onAnimationEnd={() => setIsPlayButtonSpinning(false)}
+                    />
                     <span className="sg-hero-content">
                       <span className="sg-play-icon" aria-hidden="true">▶</span>
                       <span className="sg-play-text">Přehrát ukázku</span>
@@ -763,7 +807,7 @@ function App() {
                 <div className="sg-register-actions">
                   <button
                     type="button"
-                    onClick={() => setCurrentView('leaderboard')}
+                    onClick={() => transitionToView('leaderboard')}
                     className="sg-button sg-button-secondary sg-register-link"
                   >
                     Zobrazit leaderboard
