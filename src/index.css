@@ -433,6 +433,290 @@ button {
   text-wrap: pretty;
 }
 
+.sg-album-view {
+  width: min(100%, 820px);
+  margin: 0 auto;
+}
+
+.sg-album-game {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 28px;
+}
+
+.sg-album-heading {
+  margin: 0 auto 22px;
+  padding: 0 16px;
+  text-align: center;
+}
+
+.sg-album-heading .sg-eyebrow {
+  margin: 0 0 6px;
+}
+
+.sg-album-heading h2 {
+  margin: 0;
+  color: #fafafa;
+  font-family: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
+  font-size: 2rem;
+  font-weight: 500;
+}
+
+.sg-album-heading > p:last-child {
+  max-width: 560px;
+  margin: 10px auto 0;
+  color: #b4b4bc;
+  line-height: 1.65;
+}
+
+.sg-album-stats {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.sg-album-stat {
+  display: flex;
+  min-width: 88px;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.sg-album-stat:first-child {
+  align-items: flex-start;
+}
+
+.sg-album-stat:last-child {
+  align-items: flex-end;
+}
+
+.sg-album-stat strong {
+  color: #fff;
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.sg-album-stat small {
+  margin-left: 2px;
+  color: #a1a1aa;
+  font-size: 0.75rem;
+}
+
+.sg-album-start {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0;
+}
+
+.sg-album-start .sg-button,
+.sg-album-feedback .sg-button {
+  min-width: 180px;
+}
+
+.sg-album-song {
+  display: flex;
+  min-height: 82px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.17);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #f4f4f5;
+  font-weight: 650;
+  transition: background 180ms ease, border-color 180ms ease, transform 180ms ease;
+}
+
+.sg-album-song:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.38);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.sg-album-song-icon {
+  font-size: 1.3rem;
+}
+
+.sg-album-prompt {
+  margin: 0;
+  color: #d4d4d8;
+  text-align: center;
+}
+
+.sg-album-audio-error {
+  margin: 0;
+  color: #fca5a5;
+  text-align: center;
+}
+
+.sg-album-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.sg-album-choice {
+  display: flex;
+  width: min(100%, 220px);
+  justify-self: center;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.045);
+  color: #e4e4e7;
+  font-weight: 600;
+  transition: border-color 240ms ease, background 240ms ease, transform 320ms cubic-bezier(0.2, 0.75, 0.25, 1), filter 320ms ease, opacity 320ms ease, box-shadow 320ms ease;
+}
+
+.sg-album-choice:hover:not(:disabled) {
+  transform: translateY(-3px) scale(1.025);
+  border-color: rgba(255, 255, 255, 0.42);
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.36), 0 0 24px rgba(255, 255, 255, 0.1);
+}
+
+.sg-album-cover {
+  position: relative;
+  display: flex;
+  width: 100%;
+  align-items: flex-end;
+  aspect-ratio: 1;
+  overflow: hidden;
+  background-color: #242424;
+  background-position: center;
+  background-size: cover;
+}
+
+.sg-album-cover::before {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background: radial-gradient(circle at var(--pointer-x, 50%) var(--pointer-y, 50%), rgba(255, 255, 255, 0.28), transparent 58%);
+  content: '';
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 220ms ease;
+}
+
+.sg-album-choice:hover:not(:disabled) .sg-album-cover::before {
+  opacity: 1;
+}
+
+.sg-album-cover::after {
+  position: absolute;
+  z-index: 2;
+  inset: 34% 0 0;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.78));
+  content: '';
+  pointer-events: none;
+}
+
+.sg-album-name {
+  position: absolute;
+  z-index: 3;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 24px 10px 10px;
+  font-size: 0.88rem;
+  line-height: 1.2;
+  text-align: center;
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.9);
+}
+
+.sg-album-choice:disabled {
+  cursor: default;
+}
+
+.sg-album-choice.is-correct {
+  position: relative;
+  z-index: 1;
+  transform: scale(1.06);
+  border-color: rgba(34, 197, 94, 0.58);
+  background: rgba(34, 197, 94, 0.14);
+  color: #86efac;
+  filter: brightness(1.16);
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.18), 0 0 32px rgba(34, 197, 94, 0.32);
+  animation: sg-album-correct-reveal 520ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+.sg-album-options.has-result .sg-album-choice:not(.is-correct) {
+  transform: scale(0.96);
+  filter: blur(2.5px) brightness(0.7);
+  opacity: 0.5;
+}
+
+@keyframes sg-album-correct-reveal {
+  from {
+    transform: scale(0.98);
+    filter: brightness(0.82);
+  }
+  to {
+    transform: scale(1.06);
+    filter: brightness(1.16);
+  }
+}
+
+.sg-album-choice.is-wrong {
+  border-color: rgba(239, 68, 68, 0.58);
+  background: rgba(239, 68, 68, 0.14);
+  color: #fca5a5;
+}
+
+.sg-album-feedback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #e4e4e7;
+  text-align: center;
+}
+
+.sg-album-feedback p {
+  margin: 0;
+}
+
+.sg-album-feedback.is-success {
+  border-color: rgba(34, 197, 94, 0.38);
+}
+
+.sg-album-feedback.is-error,
+.sg-album-feedback.is-timeout {
+  border-color: rgba(239, 68, 68, 0.38);
+}
+
+.sg-album-result {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: min(100%, 560px);
+  margin: 0 auto;
+}
+
+.sg-album-result .sg-result {
+  margin: 0;
+}
+
+.sg-album-restart {
+  display: flex;
+  justify-content: center;
+}
+
+.sg-album-restart .sg-button {
+  min-width: 180px;
+}
+
 .sg-fullscreen-countdown {
   position: fixed;
   inset: 0;
@@ -1445,12 +1729,17 @@ button {
   }
 
   .sg-tabs {
+    display: flex;
+    width: 100%;
+    max-width: 460px;
     margin-top: 22px;
   }
 
   .sg-tab {
-    min-width: 108px;
-    padding: 10px 16px;
+    min-width: 0;
+    flex: 1;
+    padding: 10px 8px;
+    font-size: 0.78rem;
   }
 
   .sg-intro {
@@ -1460,6 +1749,7 @@ button {
   }
 
   .sg-game,
+  .sg-album-game,
   .sg-leaderboard {
     padding: 17px;
     border-radius: 20px;
@@ -1501,6 +1791,16 @@ button {
 
   .sg-register-form {
     grid-template-columns: 1fr;
+  }
+
+  .sg-album-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .sg-album-name {
+    padding: 22px 6px 8px;
+    font-size: 0.76rem;
   }
 
   .sg-section-heading {

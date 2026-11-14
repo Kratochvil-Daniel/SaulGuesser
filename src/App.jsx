@@ -61,6 +61,16 @@ const songs = [
   { id: 57, title: 'Motýľ', album: 'Agónia & Extáza', previewUrl: '/songs/Album/Agonia-Extaza/Motyl.mp3' },
 ];
 
+const albumOptions = [...new Set(songs.map((song) => song.album))];
+const albumCoverFiles = {
+  'Niekde v oblakoch': 'niekde-v-oblakoch.webp',
+  'Od Nekonečna Do Dávna': 'ondd.webp',
+  'Chaos, Vtedy a Teraz': 'chaos.webp',
+  'Hotel 471': 'hotel471.webp',
+  'S.A.M.O': 'samo.webp',
+  'Agónia & Extáza': 'agonia-extaza.webp',
+};
+
 const shuffleSongDeck = (songList) => {
   const shuffledSongs = [...songList];
   for (let currentIndex = shuffledSongs.length - 1; currentIndex > 0; currentIndex -= 1) {
@@ -189,6 +199,13 @@ function App() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [timeLeft, setTimeLeft] = useState(10);
   const [currentView, setCurrentView] = useState('game');
+  const [albumQuizStatus, setAlbumQuizStatus] = useState('idle');
+  const [albumQuizSong, setAlbumQuizSong] = useState(null);
+  const [albumQuizTimeLeft, setAlbumQuizTimeLeft] = useState(15);
+  const [albumQuizScore, setAlbumQuizScore] = useState({ correct: 0, total: 0 });
+  const [albumQuizFeedback, setAlbumQuizFeedback] = useState(null);
+  const [albumQuizAudioError, setAlbumQuizAudioError] = useState('');
+  const [isAlbumQuizPlaying, setIsAlbumQuizPlaying] = useState(false);
   const [viewTransitionPhase, setViewTransitionPhase] = useState('idle');
   const [leaderboard, setLeaderboard] = useState([]);
   const [isLeaderboardLoading, setIsLeaderboardLoading] = useState(true);
@@ -208,21 +225,155 @@ function App() {
   const nextRoundTimeoutRef = useRef(null);
   const currentSongRef = useRef(null);
   const songDeckRef = useRef([]);
+  const albumQuizSongDeckRef = useRef([]);
+  const albumQuizSongRef = useRef(null);
+  const albumQuizRoundActiveRef = useRef(false);
+  const albumQuizRemainingTimeRef = useRef(15);
+  const albumQuizTimerRef = useRef(null);
+  const albumQuizAudioTimeoutRef = useRef(null);
   const pendingViewRef = useRef(null);
   const viewTransitionPhaseRef = useRef('idle');
   const maxRounds = 10;
+  const albumQuizMaxRounds = 15;
   const isFinished = score.total >= maxRounds;
   const round = score.total < maxRounds ? score.total + 1 : maxRounds;
   const isRoundActive = ['countdown', 'playing'].includes(roundStatus);
   const shouldShowUtilityChrome = currentView === 'game' && !isRoundActive && !isFinished && score.total === 0;
   const shouldShowTutorial = shouldShowUtilityChrome;
-  const shouldShowNav = shouldShowUtilityChrome;
+  const shouldShowNav = shouldShowUtilityChrome || currentView === 'album-quiz' || currentView === 'leaderboard';
   const showHeroStartButton = roundStatus === 'ready' && score.total === 0;
   const hasStartedGame = score.total > 0 || isRoundActive;
   const shouldShowRoundPanel = hasStartedGame;
 
+  const clearAlbumQuizTimers = () => {
+    if (albumQuizTimerRef.current) {
+      clearInterval(albumQuizTimerRef.current);
+      albumQuizTimerRef.current = null;
+    }
+    if (albumQuizAudioTimeoutRef.current) {
+      clearTimeout(albumQuizAudioTimeoutRef.current);
+      albumQuizAudioTimeoutRef.current = null;
+    }
+  };
+
+  const stopAlbumQuizRound = () => {
+    clearAlbumQuizTimers();
+    albumQuizRoundActiveRef.current = false;
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+    setIsAlbumQuizPlaying(false);
+  };
+
+  const finishAlbumQuizRound = (selectedAlbum) => {
+    const resolvedSong = albumQuizSongRef.current;
+    if (!albumQuizRoundActiveRef.current || !resolvedSong) return;
+
+    albumQuizRoundActiveRef.current = false;
+    clearAlbumQuizTimers();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+    setIsAlbumQuizPlaying(false);
+
+    const isCorrect = selectedAlbum === resolvedSong.album;
+    setAlbumQuizScore((previousScore) => ({
+      correct: previousScore.correct + (isCorrect ? 1 : 0),
+      total: previousScore.total + 1,
+    }));
+    setAlbumQuizFeedback({
+      type: selectedAlbum === null ? 'timeout' : isCorrect ? 'success' : 'error',
+      selectedAlbum,
+      song: resolvedSong,
+    });
+    setAlbumQuizStatus(albumQuizScore.total + 1 >= albumQuizMaxRounds ? 'finished' : 'answered');
+  };
+
+  const replayAlbumQuizSong = () => {
+    const audio = audioRef.current;
+    if (!audio || !albumQuizSongRef.current || albumQuizStatus !== 'playing') return;
+
+    audio.currentTime = 0;
+    audio.play()
+      .then(() => setIsAlbumQuizPlaying(true))
+      .catch((error) => {
+        console.error('Audio replay failed', error);
+        setAlbumQuizAudioError('Ukázku se nepodařilo přehrát.');
+      });
+  };
+
+  const startAlbumQuizRound = () => {
+    if (albumQuizScore.total >= albumQuizMaxRounds) return;
+
+    clearAlbumQuizTimers();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+
+    if (albumQuizSongDeckRef.current.length === 0) {
+      albumQuizSongDeckRef.current = shuffleSongDeck(songs);
+    }
+    const nextSong = albumQuizSongDeckRef.current.pop();
+    albumQuizSongRef.current = nextSong;
+    albumQuizRoundActiveRef.current = true;
+    albumQuizRemainingTimeRef.current = 15;
+    setAlbumQuizSong(nextSong);
+    setAlbumQuizTimeLeft(15);
+    setAlbumQuizFeedback(null);
+    setAlbumQuizAudioError('');
+    setAlbumQuizStatus('playing');
+    setIsAlbumQuizPlaying(false);
+
+    const audio = audioRef.current;
+    if (audio) {
+      audio.src = getSongPreviewUrl(nextSong);
+      audio.currentTime = 0;
+      audio.load();
+      audio.play()
+        .then(() => setIsAlbumQuizPlaying(true))
+        .catch((error) => {
+          console.error('Audio play failed', error);
+          setAlbumQuizAudioError('Ukázku se nepodařilo přehrát.');
+        });
+      albumQuizAudioTimeoutRef.current = window.setTimeout(() => {
+        audio.pause();
+        audio.currentTime = 0;
+        setIsAlbumQuizPlaying(false);
+        albumQuizAudioTimeoutRef.current = null;
+      }, 15000);
+    }
+
+    albumQuizTimerRef.current = window.setInterval(() => {
+      const nextTime = Math.max(0, albumQuizRemainingTimeRef.current - 1);
+      albumQuizRemainingTimeRef.current = nextTime;
+      setAlbumQuizTimeLeft(nextTime);
+      if (nextTime === 0) finishAlbumQuizRound(null);
+    }, 1000);
+  };
+
+  const resetAlbumQuiz = () => {
+    stopAlbumQuizRound();
+    albumQuizSongDeckRef.current = shuffleSongDeck(songs);
+    albumQuizSongRef.current = null;
+    setAlbumQuizScore({ correct: 0, total: 0 });
+    setAlbumQuizTimeLeft(15);
+    setAlbumQuizFeedback(null);
+    setAlbumQuizAudioError('');
+    setAlbumQuizStatus('idle');
+  };
+
   const transitionToView = (nextView) => {
     if (nextView === currentView || viewTransitionPhaseRef.current !== 'idle') return;
+
+    if (currentView === 'album-quiz' && nextView !== 'album-quiz' && albumQuizRoundActiveRef.current) {
+      stopAlbumQuizRound();
+      setAlbumQuizStatus('idle');
+      setAlbumQuizSong(null);
+      albumQuizSongRef.current = null;
+    }
 
     pendingViewRef.current = nextView;
     viewTransitionPhaseRef.current = 'out';
@@ -573,6 +724,7 @@ function App() {
   useEffect(() => {
     return () => {
       clearRoundTimers();
+      clearAlbumQuizTimers();
       stopPreview();
     };
   }, []);
@@ -622,7 +774,7 @@ function App() {
         </div>
       )}
 
-      <div className={`sg-header ${isRoundActive || score.total > 0 ? 'sg-header-compact' : ''}`}>
+      <div className={`sg-header ${isRoundActive || score.total > 0 || currentView === 'album-quiz' ? 'sg-header-compact' : ''}`}>
         {shouldShowUtilityChrome && (
           <div className="sg-kicker">
             Jsi pravý fanoušek Saula? Ověř si to přes:
@@ -636,7 +788,14 @@ function App() {
               onClick={() => transitionToView('game')}
               className={`sg-tab ${currentView === 'game' ? 'is-active' : ''}`}
             >
-              Hra
+              Song Guesser
+            </button>
+            <button
+              type="button"
+              onClick={() => transitionToView('album-quiz')}
+              className={`sg-tab ${currentView === 'album-quiz' ? 'is-active' : ''}`}
+            >
+              Album Quiz
             </button>
             <button
               type="button"
@@ -720,6 +879,118 @@ function App() {
               ))}
             </div>
           ) : null}
+        </div>
+      ) : currentView === 'album-quiz' ? (
+        <div className="sg-album-view">
+          <div className="sg-album-heading">
+            <p className="sg-eyebrow"></p>
+            <h2>Přiřaď album</h2>
+            <p>Poslechni si náhodnou skladbu a vyber album, ze kterého pochází. Na odpověď máš 15 sekund.</p>
+          </div>
+
+          <div className="sg-panel sg-album-game">
+          <div className="sg-album-stats">
+            <div className="sg-album-stat">
+              <span className="sg-label">Kolo</span>
+              <strong>{Math.min(albumQuizScore.total + 1, albumQuizMaxRounds)} / {albumQuizMaxRounds}</strong>
+            </div>
+            <div className="sg-album-stat sg-album-time">
+              <span className="sg-label">Čas</span>
+              <strong>{albumQuizTimeLeft}<small>s</small></strong>
+            </div>
+            <div className="sg-album-stat">
+              <span className="sg-label">Skóre</span>
+              <strong>{albumQuizScore.correct}</strong>
+            </div>
+          </div>
+
+          {albumQuizStatus === 'idle' && (
+            <div className="sg-album-start">
+              <button type="button" onClick={startAlbumQuizRound} className="sg-button sg-button-primary">
+                Spustit hru
+              </button>
+            </div>
+          )}
+
+          {albumQuizStatus === 'playing' && (
+            <>
+              <button type="button" className={`sg-album-song ${isAlbumQuizPlaying ? 'is-playing' : ''}`} onClick={replayAlbumQuizSong}>
+                <span className="sg-album-song-icon" aria-hidden="true">▶</span>
+                <span>{isAlbumQuizPlaying ? 'Ukázka hraje · přehrát znovu' : 'Přehrát ukázku znovu'}</span>
+              </button>
+              {albumQuizAudioError && <p role="alert" className="sg-album-audio-error">{albumQuizAudioError}</p>}
+              <p className="sg-album-prompt">Klikni na album, ze kterého skladba pochází:</p>
+            </>
+          )}
+
+          <div className={`sg-album-options ${albumQuizFeedback ? 'has-result' : ''}`}>
+            {albumOptions.map((album) => {
+              const isCorrectAlbum = albumQuizFeedback?.song.album === album;
+              const isSelectedAlbum = albumQuizFeedback?.selectedAlbum === album;
+              const isSelectedWrong = albumQuizFeedback?.selectedAlbum === album && albumQuizFeedback.type === 'error';
+              return (
+                <button
+                  key={album}
+                  type="button"
+                  disabled={albumQuizStatus !== 'playing'}
+                  onClick={() => finishAlbumQuizRound(album)}
+                  onPointerMove={(event) => {
+                    const bounds = event.currentTarget.getBoundingClientRect();
+                    event.currentTarget.style.setProperty('--pointer-x', `${((event.clientX - bounds.left) / bounds.width) * 100}%`);
+                    event.currentTarget.style.setProperty('--pointer-y', `${((event.clientY - bounds.top) / bounds.height) * 100}%`);
+                  }}
+                  className={`sg-album-choice ${isCorrectAlbum ? 'is-correct' : ''} ${isSelectedAlbum ? 'is-selected' : ''} ${isSelectedWrong ? 'is-wrong' : ''}`}
+                >
+                  <span
+                    className="sg-album-cover"
+                    style={{ backgroundImage: `url("${getAssetUrl(`/Images/album-covers/${albumCoverFiles[album]}`)}")` }}
+                  >
+                    <span className="sg-album-name">{album}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {albumQuizStatus === 'answered' && albumQuizFeedback && (
+            <div className={`sg-album-feedback is-${albumQuizFeedback.type}`}>
+              <p>
+                {albumQuizFeedback.type === 'success'
+                  ? 'Správně!'
+                  : albumQuizFeedback.type === 'timeout'
+                    ? 'Čas vypršel.'
+                    : 'Tohle album nesedí.'}
+              </p>
+              <p><strong>{albumQuizFeedback.song.title}</strong> · {albumQuizFeedback.song.album}</p>
+              <button type="button" onClick={startAlbumQuizRound} className="sg-button sg-button-primary">
+                Další skladba
+              </button>
+            </div>
+          )}
+
+          {(albumQuizStatus === 'playing' || albumQuizStatus === 'answered') && (
+            <div className="sg-album-restart">
+              <button type="button" onClick={resetAlbumQuiz} className="sg-button sg-button-secondary">
+                Restart hry
+              </button>
+            </div>
+          )}
+
+          {albumQuizStatus === 'finished' && (
+            <div className="sg-album-result">
+              <div className="sg-result">
+                <p className="sg-eyebrow">Konec hry!</p>
+                <h2>Tvoje výsledky</h2>
+                <p>Správné odpovědi: <strong>{albumQuizScore.correct} / {albumQuizMaxRounds}</strong></p>
+              </div>
+              <div className="sg-album-restart">
+                <button type="button" onClick={resetAlbumQuiz} className="sg-button sg-button-primary">
+                  Restart hry
+                </button>
+              </div>
+            </div>
+          )}
+          </div>
         </div>
       ) : (
         <div className={`sg-panel sg-game ${showHeroStartButton ? 'sg-game-intro' : ''}`}>
