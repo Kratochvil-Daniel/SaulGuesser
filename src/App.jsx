@@ -61,6 +61,41 @@ const songs = [
   { id: 57, title: 'Motýľ', album: 'Agónia & Extáza', previewUrl: '/songs/Album/Agonia-Extaza/Motyl.mp3' },
 ];
 
+const featSongs = [
+  { id: 1, title: '4eva - Dalyb', album: 'TEEN(R)AGE', previewUrl: '/songs/Feats/4eva.mp3' },
+  { id: 2, title: 'ARA - Zayo', album: 'ADHD', previewUrl: '/songs/Feats/ARA.mp3' },
+  { id: 3, title: 'BEZ SLOV RMX - Shimmi', album: 'KIDDO', previewUrl: '/songs/Feats/BEZ-SLOV-RMX.mp3' },
+  { id: 4, title: 'Boží Mlýny Melou Furt - Yzomandias', album: 'Kruhy & Vlny (217 Twins Edition)', previewUrl: '/songs/Feats/Bozi-mlyny-melou-furt.mp3' },
+  { id: 5, title: 'Cesta Za Sluncem - Hasan', album: 'Space Blues Music', previewUrl: '/songs/Feats/Cesta-Za-Sluncem.mp3' },
+  { id: 6, title: 'Čo bolo včera - Nicholas Naison', album: 'SNY II', previewUrl: '/songs/Feats/Co-bolo-vcera.mp3' },
+  { id: 7, title: 'VERÍME - Ego', album: 'MIER', previewUrl: '/songs/Feats/VERIME.mp3' },
+  { id: 8, title: 'Nemůžu Tě Soudit - Hasan', album: 'Album, co mi změnilo život', previewUrl: '/songs/Feats/Nemuzu-te-soudit.mp3' },
+  { id: 9, title: 'Voľný Pád - Hujdy', album: 'Voľný Pád', previewUrl: '/songs/Feats/Volny-pad.mp3' },
+  { id: 10, title: 'LOW&HIGH - Zayo', album: 'HAPPY HALLOWEEN', previewUrl: '/songs/Feats/LOW-HIGH.mp3' },
+  { id: 11, title: 'Nahotel - VR/NOBODY', album: 'Zelený oči černý srdce', previewUrl: '/songs/Feats/Nahotel.mp3' },
+  { id: 12, title: 'Noc - Duch', album: 'Adhdkidd', previewUrl: '/songs/Feats/Noc.mp3' },
+  { id: 13, title: 'OHEN - Porshe Boy, WEN', album: 'EAST SIDE SOUND 2', previewUrl: '/songs/Feats/OHEN.mp3' },
+  { id: 14, title: 'PANTOMIMA - WEN', album: 'Tiene Svetla: Chapter 2', previewUrl: '/songs/Feats/PANTOMIMA.mp3' },
+  { id: 15, title: 'Percepcia - YOO', album: 'TRIP TO 67', previewUrl: '/songs/Feats/Percepcia.mp3' },
+  { id: 16, title: 'RiSK - WEN', album: 'LiGHT BLUE', previewUrl: '/songs/Feats/RiSK.mp3' },
+  { id: 17, title: 'S tebou - Hasan', album: 'Space', previewUrl: '/songs/Feats/S-tebou.mp3' },
+  { id: 18, title: 'lotus - Samey', album: 'XYZ', previewUrl: '/songs/Feats/lotus.mp3' },
+  { id: 19, title: 'malaga - Samey', album: 'Slzy Ulic', previewUrl: '/songs/Feats/malaga.mp3' },
+  { id: 20, title: 'Nadej - Samey', album: 'Nadej', previewUrl: '/songs/Feats/Nadej.mp3' },
+  { id: 21, title: 'tma - Samey', album: 'Anarchia', previewUrl: '/songs/Feats/tma.mp3' },
+  { id: 22, title: 'Vlasy Vejou Vo Vetru - Samey', album: 'Mama Neviem Kedy Pridem Domov', previewUrl: '/songs/Feats/Vlasy-Vejou-Vo-Vetru.mp3' },
+  { id: 23, title: 'Nočná - Separ', album: 'FLOWDEMORT', previewUrl: '/songs/Feats/Nocna.mp3' },
+  { id: 24, title: 'Jedna noc a jedno rano - SIMILIVINLIFE', album: '23:69', previewUrl: '/songs/Feats/Jedna-noc-a-jedno-rano.mp3' },
+  { id: 25, title: 'so mnou - Hujdy', album: 'Split', previewUrl: '/songs/Feats/so-mnou.mp3' },
+  { id: 26, title: 'sober - Porshe Boy', album: 'BREAKUP PARTY', previewUrl: '/songs/Feats/sober.mp3' },
+  { id: 27, title: 'TOČIMTOČIMTOČIM - Annet X', album: 'KOUKEJ SE MNOU', previewUrl: '/songs/Feats/tocim.mp3' },
+  { id: 28, title: 'Vášeň - Loudz1', album: 'Cloud', previewUrl: '/songs/Feats/Vasen.mp3' },
+  { id: 29, title: 'Cígo a káva - Viktor Sheen', album: 'Impostor syndrom', previewUrl: '/songs/Feats/cigo-kava.mp3' },
+  { id: 30, title: 'No Offence - WEN', album: 'Tiene Svetla: Chapter 1', previewUrl: '/songs/Feats/No-Offence.mp3' },
+  { id: 31, title: 'NFS - Yzomandias', album: 'J.EDEN E-G3N (#freekarlo edition)', previewUrl: '/songs/Feats/NFS.mp3' },
+  { id: 32, title: 'Zavři Oči - Shimmi', album: 'YO', previewUrl: '/songs/Feats/Zavri-Oci.mp3' },
+  
+];
 const albumOptions = [...new Set(songs.map((song) => song.album))];
 const albumCoverFiles = {
   'Niekde v oblakoch': 'niekde-v-oblakoch.webp',
@@ -91,9 +126,17 @@ const slugify = (text) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '');
 
+const normalizeAnswer = (value) => value
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .trim();
+
 const LEADERBOARD_STORAGE_KEY = 'saulguesser_leaderboard';
+const ALBUM_LEADERBOARD_STORAGE_KEY = 'saulguesser_album_quiz_leaderboard';
 const LEADERBOARD_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const LEADERBOARD_TABLE = 'leaderboard_entries';
+const ALBUM_LEADERBOARD_TABLE = 'album_quiz_entries';
 const LEADERBOARD_LIMIT = 100;
 
 const purgeOldEntries = (entries) => {
@@ -104,21 +147,29 @@ const purgeOldEntries = (entries) => {
   });
 };
 
-const loadLocalLeaderboard = () => {
+const loadLocalLeaderboard = (storageKey = LEADERBOARD_STORAGE_KEY) => {
   if (typeof window === 'undefined') return [];
   try {
-    const stored = window.localStorage.getItem(LEADERBOARD_STORAGE_KEY);
+    const stored = window.localStorage.getItem(storageKey);
     const entries = stored ? JSON.parse(stored) : [];
     if (!Array.isArray(entries)) throw new Error('Lokální leaderboard má neplatný formát.');
     const filtered = purgeOldEntries(entries);
     if (filtered.length !== entries.length) {
-      window.localStorage.setItem(LEADERBOARD_STORAGE_KEY, JSON.stringify(filtered));
+      window.localStorage.setItem(storageKey, JSON.stringify(filtered));
     }
     return filtered;
   } catch (error) {
     throw new Error('Nepodařilo se načíst leaderboard z tohoto prohlížeče.', { cause: error });
   }
 };
+
+const mapAlbumLeaderboardRow = ({ id, name, score, avg_seconds, created_at }) => ({
+  id,
+  name,
+  score,
+  avgSeconds: Number(avg_seconds),
+  timestamp: created_at,
+});
 
 const mapLeaderboardRow = ({ id, name, score, avg_seconds, created_at }) => ({
   id,
@@ -142,6 +193,51 @@ const loadLeaderboard = async () => {
 
   if (error) throw error;
   return data.map(mapLeaderboardRow);
+};
+
+const loadAlbumLeaderboard = async () => {
+  if (supabaseConfigError) throw new Error(supabaseConfigError);
+  if (!supabase) return loadLocalLeaderboard(ALBUM_LEADERBOARD_STORAGE_KEY);
+
+  const { data, error } = await supabase
+    .from(ALBUM_LEADERBOARD_TABLE)
+    .select('id, name, score, avg_seconds, created_at')
+    .gte('created_at', new Date(Date.now() - LEADERBOARD_RETENTION_MS).toISOString())
+    .order('score', { ascending: false })
+    .order('avg_seconds', { ascending: true })
+    .limit(LEADERBOARD_LIMIT);
+
+  if (error) throw error;
+  return data.map(mapAlbumLeaderboardRow);
+};
+
+const saveAlbumLeaderboardEntry = async ({ name, score, avgSeconds }) => {
+  if (supabaseConfigError) throw new Error(supabaseConfigError);
+  if (!supabase) {
+    const timestamp = new Date().toISOString();
+    const entry = {
+      id: `${Date.now()}-${name}`,
+      name,
+      score,
+      avgSeconds,
+      timestamp,
+    };
+    const entries = purgeOldEntries([
+      ...loadLocalLeaderboard(ALBUM_LEADERBOARD_STORAGE_KEY),
+      entry,
+    ]);
+    window.localStorage.setItem(ALBUM_LEADERBOARD_STORAGE_KEY, JSON.stringify(entries));
+    return entry;
+  }
+
+  const { data, error } = await supabase
+    .from(ALBUM_LEADERBOARD_TABLE)
+    .insert({ name, score, avg_seconds: avgSeconds })
+    .select('id, name, score, avg_seconds, created_at')
+    .single();
+
+  if (error) throw error;
+  return mapAlbumLeaderboardRow(data);
 };
 
 const saveLeaderboardEntry = async ({ name, score, avgSeconds }) => {
@@ -199,20 +295,31 @@ function App() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [timeLeft, setTimeLeft] = useState(10);
   const [currentView, setCurrentView] = useState('game');
+  const [includeFeats, setIncludeFeats] = useState(false);
   const [albumQuizStatus, setAlbumQuizStatus] = useState('idle');
   const [albumQuizSong, setAlbumQuizSong] = useState(null);
   const [albumQuizTimeLeft, setAlbumQuizTimeLeft] = useState(15);
   const [albumQuizScore, setAlbumQuizScore] = useState({ correct: 0, total: 0 });
+  const [albumQuizTimes, setAlbumQuizTimes] = useState([]);
+  const [albumQuizAverageTime, setAlbumQuizAverageTime] = useState(0);
   const [albumQuizFeedback, setAlbumQuizFeedback] = useState(null);
   const [albumQuizAudioError, setAlbumQuizAudioError] = useState('');
   const [isAlbumQuizPlaying, setIsAlbumQuizPlaying] = useState(false);
   const [viewTransitionPhase, setViewTransitionPhase] = useState('idle');
   const [leaderboard, setLeaderboard] = useState([]);
+  const [albumLeaderboard, setAlbumLeaderboard] = useState([]);
+  const [leaderboardCategory, setLeaderboardCategory] = useState('song');
   const [isLeaderboardLoading, setIsLeaderboardLoading] = useState(true);
+  const [isAlbumLeaderboardLoading, setIsAlbumLeaderboardLoading] = useState(true);
   const [leaderboardError, setLeaderboardError] = useState('');
+  const [albumLeaderboardError, setAlbumLeaderboardError] = useState('');
   const [playerName, setPlayerName] = useState('');
   const [isRegistered, setIsRegistered] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [albumPlayerName, setAlbumPlayerName] = useState('');
+  const [isAlbumRegistered, setIsAlbumRegistered] = useState(false);
+  const [isAlbumSubmitting, setIsAlbumSubmitting] = useState(false);
+  const [albumSubmitMessage, setAlbumSubmitMessage] = useState('');
   const [gameTimes, setGameTimes] = useState([]);
   const [submitMessage, setSubmitMessage] = useState('');
   const [countdownValue, setCountdownValue] = useState(3);
@@ -279,6 +386,14 @@ function App() {
     setIsAlbumQuizPlaying(false);
 
     const isCorrect = selectedAlbum === resolvedSong.album;
+    const elapsedSeconds = selectedAlbum === null
+      ? 15
+      : Math.max(0, 15 - albumQuizRemainingTimeRef.current);
+    setAlbumQuizTimes((previousTimes) => {
+      const nextTimes = [...previousTimes, elapsedSeconds];
+      setAlbumQuizAverageTime(nextTimes.reduce((sum, value) => sum + value, 0) / nextTimes.length);
+      return nextTimes;
+    });
     setAlbumQuizScore((previousScore) => ({
       correct: previousScore.correct + (isCorrect ? 1 : 0),
       total: previousScore.total + 1,
@@ -359,10 +474,16 @@ function App() {
     albumQuizSongDeckRef.current = shuffleSongDeck(songs);
     albumQuizSongRef.current = null;
     setAlbumQuizScore({ correct: 0, total: 0 });
+    setAlbumQuizTimes([]);
+    setAlbumQuizAverageTime(0);
     setAlbumQuizTimeLeft(15);
     setAlbumQuizFeedback(null);
     setAlbumQuizAudioError('');
     setAlbumQuizStatus('idle');
+    setAlbumPlayerName('');
+    setIsAlbumRegistered(false);
+    setIsAlbumSubmitting(false);
+    setAlbumSubmitMessage('');
   };
 
   const transitionToView = (nextView) => {
@@ -394,9 +515,15 @@ function App() {
     }
   };
 
+  const getSongPool = () => (
+    includeFeats && featSongs.length > 0
+      ? [...songs, ...featSongs]
+      : songs
+  );
+
   const pickRandomSong = () => {
     if (songDeckRef.current.length === 0) {
-      songDeckRef.current = shuffleSongDeck(songs);
+      songDeckRef.current = shuffleSongDeck(getSongPool());
     }
     return songDeckRef.current.pop();
   };
@@ -442,7 +569,7 @@ function App() {
   const resetGame = () => {
     clearRoundTimers();
     stopPreview();
-    songDeckRef.current = shuffleSongDeck(songs);
+    songDeckRef.current = shuffleSongDeck(getSongPool());
     setScore({ correct: 0, total: 0 });
     setGuess('');
     setFeedback(null);
@@ -609,14 +736,13 @@ function App() {
   const handleGuess = () => {
     if (!currentSong || isFinished || !guess.trim()) return;
 
-    const normalizeAnswer = (value) => value
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase()
-      .trim();
     const normalizedGuess = normalizeAnswer(guess);
     const normalizedTitle = normalizeAnswer(currentSong.title);
-    const isCorrect = normalizedGuess === normalizedTitle;
+    const normalizedSongName = normalizeAnswer(currentSong.title.split(' - ')[0]);
+    const normalizedArtistName = normalizeAnswer(currentSong.title.split(' - ').slice(1).join(' - '));
+    const isCorrect = normalizedGuess === normalizedTitle
+      || normalizedGuess === normalizedSongName
+      || (normalizedArtistName && `${normalizedSongName} ${normalizedArtistName}` === normalizedGuess);
 
     setGuess('');
     setShowSuggestions(false);
@@ -626,6 +752,39 @@ function App() {
   const handleSuggestionClick = (title) => {
     setGuess(title);
     setShowSuggestions(false);
+  };
+
+  const handleAlbumLeaderboardSubmit = async (event) => {
+    event.preventDefault();
+    const trimmedName = albumPlayerName.trim();
+    if (!trimmedName) {
+      setAlbumSubmitMessage('Zadej prosím jméno.');
+      return;
+    }
+    if (trimmedName.length > 40) {
+      setAlbumSubmitMessage('Jméno může mít nejvýše 40 znaků.');
+      return;
+    }
+
+    setIsAlbumSubmitting(true);
+    setAlbumSubmitMessage('');
+    try {
+      const entry = await saveAlbumLeaderboardEntry({
+        name: trimmedName,
+        score: albumQuizScore.correct,
+        avgSeconds: albumQuizAverageTime,
+      });
+      setAlbumLeaderboard((entries) => [...entries, entry]);
+      setIsAlbumRegistered(true);
+      setAlbumSubmitMessage(supabaseConfigured
+        ? 'Výsledek byl uložen do Album Quiz leaderboardu.'
+        : 'Výsledek je uložen jen v tomto prohlížeči.');
+    } catch (error) {
+      console.error('Failed to save album leaderboard entry', error);
+      setAlbumSubmitMessage(`Výsledek se nepodařilo uložit: ${error.message || 'neznámá chyba'}`);
+    } finally {
+      setIsAlbumSubmitting(false);
+    }
   };
 
   const handleLeaderboardSubmit = async (event) => {
@@ -666,8 +825,18 @@ function App() {
       return [];
     }
 
-    return songs
-      .filter((song) => song.title.toLowerCase().includes(guess.trim().toLowerCase()))
+    const activeSongPool = includeFeats && featSongs.length > 0
+      ? [...songs, ...featSongs]
+      : songs;
+
+    return activeSongPool
+      .filter((song) => {
+        const normalizedQuery = normalizeAnswer(guess);
+        const normalizedTitle = normalizeAnswer(song.title);
+        const songNameBeforeDash = normalizedTitle.split(' - ')[0];
+        return normalizedTitle.includes(normalizedQuery)
+          || songNameBeforeDash.includes(normalizedQuery);
+      })
       .slice(0, 4);
   }, [guess]);
 
@@ -676,12 +845,29 @@ function App() {
     return gameTimes.reduce((sum, value) => sum + value, 0) / gameTimes.length;
   }, [gameTimes]);
 
-  const sortedLeaderboard = useMemo(() => {
+  const sortedSongLeaderboard = useMemo(() => {
     return [...leaderboard].sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
       return a.avgSeconds - b.avgSeconds;
     });
   }, [leaderboard]);
+
+  const sortedAlbumLeaderboard = useMemo(() => {
+    return [...albumLeaderboard].sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.avgSeconds - b.avgSeconds;
+    });
+  }, [albumLeaderboard]);
+
+  const sortedLeaderboard = leaderboardCategory === 'album'
+    ? sortedAlbumLeaderboard
+    : sortedSongLeaderboard;
+  const activeLeaderboardLoading = leaderboardCategory === 'album'
+    ? isAlbumLeaderboardLoading
+    : isLeaderboardLoading;
+  const activeLeaderboardError = leaderboardCategory === 'album'
+    ? albumLeaderboardError
+    : leaderboardError;
 
   const refreshLeaderboard = async () => {
     setIsLeaderboardLoading(true);
@@ -693,6 +879,19 @@ function App() {
       setLeaderboardError(error.message || 'Nepodařilo se načíst leaderboard.');
     } finally {
       setIsLeaderboardLoading(false);
+    }
+  };
+
+  const refreshAlbumLeaderboard = async () => {
+    setIsAlbumLeaderboardLoading(true);
+    setAlbumLeaderboardError('');
+    try {
+      setAlbumLeaderboard(await loadAlbumLeaderboard());
+    } catch (error) {
+      console.error('Failed to load album leaderboard', error);
+      setAlbumLeaderboardError(error.message || 'Nepodařilo se načíst Album Quiz leaderboard.');
+    } finally {
+      setIsAlbumLeaderboardLoading(false);
     }
   };
 
@@ -713,7 +912,22 @@ function App() {
         if (isActive) setIsLeaderboardLoading(false);
       });
 
-    const initialSong = pickRandomSong();
+    setIsAlbumLeaderboardLoading(true);
+    loadAlbumLeaderboard()
+      .then((entries) => {
+        if (isActive) setAlbumLeaderboard(entries);
+      })
+      .catch((error) => {
+        console.error('Failed to load album leaderboard', error);
+        if (isActive) {
+          setAlbumLeaderboardError(error.message || 'Nepodařilo se načíst Album Quiz leaderboard.');
+        }
+      })
+      .finally(() => {
+        if (isActive) setIsAlbumLeaderboardLoading(false);
+      });
+
+    const initialSong = pickRandomSong('saul');
     currentSongRef.current = initialSong;
     setCurrentSong(initialSong);
     return () => {
@@ -817,8 +1031,23 @@ function App() {
         <div className="sg-panel sg-leaderboard">
           <div className="sg-section-heading">
             <div>
-              
               <h2>Leaderboard</h2>
+              <div className="sg-leaderboard-categories" aria-label="Leaderboard hry">
+                <button
+                  type="button"
+                  className={`sg-leaderboard-category ${leaderboardCategory === 'song' ? 'is-active' : ''}`}
+                  onClick={() => setLeaderboardCategory('song')}
+                >
+                  Song Guesser
+                </button>
+                <button
+                  type="button"
+                  className={`sg-leaderboard-category ${leaderboardCategory === 'album' ? 'is-active' : ''}`}
+                  onClick={() => setLeaderboardCategory('album')}
+                >
+                  Album Quiz
+                </button>
+              </div>
             </div>
             <div className="sg-section-actions">
               <button
@@ -838,24 +1067,24 @@ function App() {
                 : 'Supabase není nastavený. Výsledky se ukládají jen v tomto prohlížeči.'}
             </p>
           )}
-          {leaderboardError && (
+          {activeLeaderboardError && (
             <div role="alert" className="sg-error">
-              <p>Nepodařilo se načíst leaderboard: {leaderboardError}</p>
+              <p>Nepodařilo se načíst leaderboard: {activeLeaderboardError}</p>
               <button
                 type="button"
-                onClick={refreshLeaderboard}
-                disabled={isLeaderboardLoading}
+                onClick={leaderboardCategory === 'album' ? refreshAlbumLeaderboard : refreshLeaderboard}
+                disabled={activeLeaderboardLoading}
                 className="sg-button sg-button-secondary"
               >
                 Zkusit znovu
               </button>
             </div>
           )}
-          {isLeaderboardLoading ? (
+          {activeLeaderboardLoading ? (
             <div className="sg-empty">
               Načítám leaderboard…
             </div>
-          ) : sortedLeaderboard.length === 0 && !leaderboardError ? (
+          ) : sortedLeaderboard.length === 0 && !activeLeaderboardError ? (
             <div className="sg-empty">
               Zatím není žádný výsledek. Zahraj hru a přidej se na leaderboard!
             </div>
@@ -865,7 +1094,7 @@ function App() {
                 <span>#</span>
                 <span>Hráč</span>
                 <span>Skóre</span>
-                <span>Průměr</span>
+                <span>{leaderboardCategory === 'song' ? 'Průměr' : 'Čas'}</span>
                 <span>Datum</span>
               </div>
               {sortedLeaderboard.map((entry, index) => (
@@ -873,7 +1102,7 @@ function App() {
                   <span className="sg-rank">{String(index + 1).padStart(2, '0')}</span>
                   <span className="sg-player-name">{entry.name}</span>
                   <span className="sg-score">{entry.score}</span>
-                  <span>{entry.avgSeconds.toFixed(2)}s</span>
+                  <span>{`${entry.avgSeconds.toFixed(2)}s`}</span>
                   <span className="sg-date">{new Date(entry.timestamp).toLocaleDateString()}</span>
                 </div>
               ))}
@@ -983,7 +1212,41 @@ function App() {
                 <h2>Tvoje výsledky</h2>
                 <p>Správné odpovědi: <strong>{albumQuizScore.correct} / {albumQuizMaxRounds}</strong></p>
               </div>
+              <div className="sg-register">
+                <h3>Zapsat se do Album Quiz leaderboardu</h3>
+                <form onSubmit={handleAlbumLeaderboardSubmit} className="sg-register-form">
+                  <label className="sr-only" htmlFor="albumPlayerName">Jméno</label>
+                  <input
+                    id="albumPlayerName"
+                    value={albumPlayerName}
+                    onChange={(event) => setAlbumPlayerName(event.target.value)}
+                    maxLength={40}
+                    placeholder="Zadej své jméno"
+                    className="sg-input"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isAlbumRegistered || isAlbumSubmitting}
+                    className="sg-button sg-button-primary"
+                  >
+                    {isAlbumSubmitting ? 'Ukládám…' : isAlbumRegistered ? 'Uloženo' : 'Uložit výsledky'}
+                  </button>
+                </form>
+                {albumSubmitMessage && (
+                  <p className="sg-submit-message">{albumSubmitMessage}</p>
+                )}
+              </div>
               <div className="sg-album-restart">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLeaderboardCategory('album');
+                    transitionToView('leaderboard');
+                  }}
+                  className="sg-button sg-button-secondary"
+                >
+                  Zobrazit Album Quiz leaderboard
+                </button>
                 <button type="button" onClick={resetAlbumQuiz} className="sg-button sg-button-primary">
                   Restart hry
                 </button>
@@ -996,6 +1259,36 @@ function App() {
         <div className={`sg-panel sg-game ${showHeroStartButton ? 'sg-game-intro' : ''}`}>
           {!isFinished ? (
             <>
+              {showHeroStartButton && (
+                <label className="sg-song-feat-toggle">
+                  <span>
+                    <strong>Featy</strong>
+                    <small>{featSongs.length > 0 ? 'Jsi pokročilý a chceš si to ztížit? Přidej si featové skladby!' : 'Připravujeme'}</small>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={includeFeats}
+                    disabled={featSongs.length === 0}
+                    onChange={(event) => {
+                      const nextValue = event.target.checked;
+                      setIncludeFeats(nextValue);
+                      songDeckRef.current = shuffleSongDeck(
+                        nextValue && featSongs.length > 0
+                          ? [...songs, ...featSongs]
+                          : songs
+                      );
+                      setScore({ correct: 0, total: 0 });
+                      setGuess('');
+                      setFeedback(null);
+                      setTimeLeft(10);
+                    }}
+                  />
+                  <span className="sg-song-feat-toggle-track" aria-hidden="true">
+                    <span />
+                  </span>
+                </label>
+              )}
+
               {showHeroStartButton && (
                 <div className="sg-start-panel">
                   <button

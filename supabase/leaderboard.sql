@@ -33,3 +33,49 @@ create policy "Anyone can submit leaderboard entries"
 
 create index if not exists leaderboard_entries_created_at_score_idx
   on public.leaderboard_entries (created_at desc, score desc, avg_seconds asc);
+
+create table if not exists public.album_quiz_entries (
+  id uuid primary key default gen_random_uuid(),
+  name text not null check (char_length(btrim(name)) between 1 and 40),
+  score integer not null check (score between 0 and 15),
+  avg_seconds numeric(5, 2) not null check (avg_seconds between 0 and 15),
+  created_at timestamptz not null default now()
+);
+
+alter table public.album_quiz_entries
+  add column if not exists avg_seconds numeric(5, 2) not null default 0;
+
+alter table public.album_quiz_entries
+  drop constraint if exists album_quiz_entries_avg_seconds_check;
+
+alter table public.album_quiz_entries
+  add constraint album_quiz_entries_avg_seconds_check
+  check (avg_seconds between 0 and 15);
+
+alter table public.album_quiz_entries enable row level security;
+
+revoke all on public.album_quiz_entries from anon, authenticated;
+grant select, insert on public.album_quiz_entries to anon, authenticated;
+
+drop policy if exists "Anyone can read album quiz entries" on public.album_quiz_entries;
+create policy "Anyone can read album quiz entries"
+  on public.album_quiz_entries
+  for select
+  to anon, authenticated
+  using (true);
+
+drop policy if exists "Anyone can submit album quiz entries" on public.album_quiz_entries;
+create policy "Anyone can submit album quiz entries"
+  on public.album_quiz_entries
+  for insert
+  to anon, authenticated
+  with check (
+    char_length(btrim(name)) between 1 and 40
+    and score between 0 and 15
+    and avg_seconds between 0 and 15
+    and created_at <= now()
+    and created_at >= now() - interval '5 minutes'
+  );
+
+create index if not exists album_quiz_entries_created_at_score_idx
+  on public.album_quiz_entries (created_at desc, score desc, avg_seconds asc);
