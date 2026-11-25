@@ -61,6 +61,14 @@ const songs = [
   { id: 57, title: 'Motýľ', album: 'Agónia & Extáza', previewUrl: '/songs/Album/Agonia-Extaza/Motyl.mp3' },
 ];
 
+const saulSingles = [
+  { id: 1, title: 'Nwm Čo Príde Zajtra', album: 'Nwm Čo Príde Zajtra', previewUrl: '/songs/Singles/Nwm-co-pride-zajtra.mp3' },
+  { id: 2, title: 'Tvoje Slzy Hasia Moje Peklo', album: 'Tvoje Slzy Hasia Moje Peklo', previewUrl: '/songs/Singles/Tvoje-slzy-hasia.mp3' },
+  { id: 3, title: 'Za Obzory - Hujdy Remix', album: 'Za Obzory (Hujdy Remix)', previewUrl: '/songs/Singles/za-obzory-remix.mp3' },
+  
+
+];
+
 const featSongs = [
   { id: 1, title: '4eva - Dalyb', album: 'TEEN(R)AGE', previewUrl: '/songs/Feats/4eva.mp3' },
   { id: 2, title: 'ARA - Zayo', album: 'ADHD', previewUrl: '/songs/Feats/ARA.mp3' },
@@ -93,9 +101,16 @@ const featSongs = [
   { id: 29, title: 'Cígo a káva - Viktor Sheen', album: 'Impostor syndrom', previewUrl: '/songs/Feats/cigo-kava.mp3' },
   { id: 30, title: 'No Offence - WEN', album: 'Tiene Svetla: Chapter 1', previewUrl: '/songs/Feats/No-Offence.mp3' },
   { id: 31, title: 'NFS - Yzomandias', album: 'J.EDEN E-G3N (#freekarlo edition)', previewUrl: '/songs/Feats/NFS.mp3' },
-  { id: 32, title: 'Zavři Oči - Shimmi', album: 'YO', previewUrl: '/songs/Feats/Zavri-Oci.mp3' },
+  { id: 32, title: 'Zavři Oči - Shimmi', album: 'YO', previewUrl: '/songs/Feats/Zavri-oci.mp3' },
   
 ];
+
+const mysterySongs = [
+  ...songs.map((song) => ({ ...song, sourceType: 'album' })),
+  ...featSongs.map((song) => ({ ...song, sourceType: 'feat' })),
+  ...saulSingles.map((song) => ({ ...song, sourceType: 'single' })),
+];
+
 const albumOptions = [...new Set(songs.map((song) => song.album))];
 const albumCoverFiles = {
   'Niekde v oblakoch': 'niekde-v-oblakoch.webp',
@@ -138,6 +153,91 @@ const LEADERBOARD_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const LEADERBOARD_TABLE = 'leaderboard_entries';
 const ALBUM_LEADERBOARD_TABLE = 'album_quiz_entries';
 const LEADERBOARD_LIMIT = 100;
+const DAILY_SAUL_COMPLETION_STORAGE_KEY = 'saulguesser_daily_saul_completions';
+const DAILY_SAUL_LIMIT = 5;
+const DAILY_SAUL_WINDOW_MS = 30 * 60 * 1000;
+
+const getDailySaulQuotaFromTimestamps = (timestamps) => {
+  const now = Date.now();
+  const recentTimestamps = timestamps
+    .map((timestamp) => new Date(timestamp).getTime())
+    .filter((timestamp) => Number.isFinite(timestamp) && now - timestamp < DAILY_SAUL_WINDOW_MS);
+  const oldestCompletion = Math.min(...recentTimestamps);
+  const remaining = Math.max(0, DAILY_SAUL_LIMIT - recentTimestamps.length);
+
+  return {
+    allowed: remaining > 0,
+    remaining,
+    resetAt: remaining === 0 ? new Date(oldestCompletion + DAILY_SAUL_WINDOW_MS) : null,
+  };
+};
+
+const loadLocalDailySaulCompletions = () => {
+  try {
+    const stored = window.localStorage.getItem(DAILY_SAUL_COMPLETION_STORAGE_KEY);
+    const timestamps = stored ? JSON.parse(stored) : [];
+    const now = Date.now();
+    const recentTimestamps = Array.isArray(timestamps)
+      ? timestamps.filter((timestamp) => {
+        const completionTime = new Date(timestamp).getTime();
+        return Number.isFinite(completionTime) && now - completionTime < DAILY_SAUL_WINDOW_MS;
+      })
+      : [];
+    window.localStorage.setItem(DAILY_SAUL_COMPLETION_STORAGE_KEY, JSON.stringify(recentTimestamps));
+    return recentTimestamps;
+  } catch (error) {
+    throw new Error('Nepodařilo se načíst limit Daily Saul z tohoto prohlížeče.', { cause: error });
+  }
+};
+
+const ensureDailySaulUser = async () => {
+  if (!supabase) return null;
+
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
+  if (sessionData.session?.user) return sessionData.session.user.id;
+
+  const { data, error } = await supabase.auth.signInAnonymously();
+  if (error) {
+    throw new Error('Pro limit Daily Saul zapni v Supabase Anonymous Sign-Ins.', { cause: error });
+  }
+  return data.user.id;
+};
+
+const normalizeDailySaulQuota = (data) => {
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    allowed: Boolean(row?.allowed),
+    remaining: Number(row?.remaining ?? 0),
+    resetAt: row?.reset_at ? new Date(row.reset_at) : null,
+  };
+};
+
+const getDailySaulQuota = async () => {
+  if (!supabase) return getDailySaulQuotaFromTimestamps(loadLocalDailySaulCompletions());
+
+  await ensureDailySaulUser();
+  const { data, error } = await supabase.rpc('get_daily_saul_quota');
+  if (error) throw error;
+  return normalizeDailySaulQuota(data);
+};
+
+const recordDailySaulCompletion = async () => {
+  if (!supabase) {
+    const completions = loadLocalDailySaulCompletions();
+    const currentQuota = getDailySaulQuotaFromTimestamps(completions);
+    if (!currentQuota.allowed) return currentQuota;
+
+    const updatedCompletions = [...completions, new Date().toISOString()];
+    window.localStorage.setItem(DAILY_SAUL_COMPLETION_STORAGE_KEY, JSON.stringify(updatedCompletions));
+    return getDailySaulQuotaFromTimestamps(updatedCompletions);
+  }
+
+  await ensureDailySaulUser();
+  const { data, error } = await supabase.rpc('complete_daily_saul_game');
+  if (error) throw error;
+  return normalizeDailySaulQuota(data);
+};
 
 const purgeOldEntries = (entries) => {
   const now = Date.now();
@@ -295,6 +395,23 @@ function App() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [timeLeft, setTimeLeft] = useState(10);
   const [currentView, setCurrentView] = useState('game');
+  const [mysteryStatus, setMysteryStatus] = useState('idle');
+  const [mysteryPhase, setMysteryPhase] = useState('type');
+  const [mysterySong, setMysterySong] = useState(null);
+  const [mysteryTypeGuess, setMysteryTypeGuess] = useState('');
+  const [mysteryAlbumGuess, setMysteryAlbumGuess] = useState('');
+  const [mysteryTitleGuess, setMysteryTitleGuess] = useState('');
+  const [mysteryAlbumHints, setMysteryAlbumHints] = useState(0);
+  const [mysteryTitleHints, setMysteryTitleHints] = useState(0);
+  const [mysteryAlbumRevealed, setMysteryAlbumRevealed] = useState(false);
+  const [mysteryAnswerStatus, setMysteryAnswerStatus] = useState('idle');
+  const [mysteryFeedback, setMysteryFeedback] = useState('');
+  const [mysteryQuota, setMysteryQuota] = useState(null);
+  const [isMysteryQuotaLoading, setIsMysteryQuotaLoading] = useState(false);
+  const [mysteryQuotaError, setMysteryQuotaError] = useState('');
+  const [mysteryQuotaMessage, setMysteryQuotaMessage] = useState('');
+  const [isMysteryAudioPlaying, setIsMysteryAudioPlaying] = useState(false);
+  const [mysteryAudioError, setMysteryAudioError] = useState('');
   const [includeFeats, setIncludeFeats] = useState(false);
   const [albumQuizStatus, setAlbumQuizStatus] = useState('idle');
   const [albumQuizSong, setAlbumQuizSong] = useState(null);
@@ -333,6 +450,10 @@ function App() {
   const currentSongRef = useRef(null);
   const songDeckRef = useRef([]);
   const albumQuizSongDeckRef = useRef([]);
+  const mysterySongDeckRef = useRef([]);
+  const mysteryAnswerTimeoutRef = useRef(null);
+  const mysteryStartPendingRef = useRef(false);
+  const mysteryCompletionRecordedRef = useRef(false);
   const albumQuizSongRef = useRef(null);
   const albumQuizRoundActiveRef = useRef(false);
   const albumQuizRemainingTimeRef = useRef(15);
@@ -347,7 +468,7 @@ function App() {
   const isRoundActive = ['countdown', 'playing'].includes(roundStatus);
   const shouldShowUtilityChrome = currentView === 'game' && !isRoundActive && !isFinished && score.total === 0;
   const shouldShowTutorial = shouldShowUtilityChrome;
-  const shouldShowNav = shouldShowUtilityChrome || currentView === 'album-quiz' || currentView === 'leaderboard';
+  const shouldShowNav = shouldShowUtilityChrome || currentView === 'album-quiz' || currentView === 'music-quiz' || currentView === 'leaderboard';
   const showHeroStartButton = roundStatus === 'ready' && score.total === 0;
   const hasStartedGame = score.total > 0 || isRoundActive;
   const shouldShowRoundPanel = hasStartedGame;
@@ -486,6 +607,186 @@ function App() {
     setAlbumSubmitMessage('');
   };
 
+  const startMysteryRound = async () => {
+    if (mysteryStartPendingRef.current) return;
+    mysteryStartPendingRef.current = true;
+    setIsMysteryQuotaLoading(true);
+    setMysteryQuotaError('');
+    setMysteryQuotaMessage('');
+
+    try {
+      const quota = await getDailySaulQuota();
+      setMysteryQuota(quota);
+      if (!quota.allowed) {
+        setMysteryStatus('blocked');
+        setMysteryQuotaMessage('V posledních 30 minutách už bylo dokončeno 5 her. Nové hraní se odemkne po vypršení limitu.');
+        return;
+      }
+    } catch (error) {
+      console.error('Daily Saul quota check failed', error);
+      setMysteryStatus('blocked');
+      setMysteryQuotaError(error.message || 'Nepodařilo se ověřit limit hry.');
+      return;
+    } finally {
+      mysteryStartPendingRef.current = false;
+      setIsMysteryQuotaLoading(false);
+    }
+
+    if (mysteryAnswerTimeoutRef.current) {
+      clearTimeout(mysteryAnswerTimeoutRef.current);
+      mysteryAnswerTimeoutRef.current = null;
+    }
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+    if (mysterySongDeckRef.current.length === 0) {
+      mysterySongDeckRef.current = shuffleSongDeck(mysterySongs);
+    }
+
+    const nextSong = mysterySongDeckRef.current.pop();
+    setMysterySong(nextSong);
+    setMysteryStatus('playing');
+    setMysteryPhase('type');
+    setMysteryTypeGuess('');
+    setMysteryAlbumGuess('');
+    setMysteryTitleGuess('');
+    setMysteryAlbumHints(0);
+    setMysteryTitleHints(0);
+    setMysteryAlbumRevealed(false);
+    setMysteryAnswerStatus('idle');
+    setMysteryFeedback('');
+    setMysteryAudioError('');
+    setMysteryQuotaMessage('');
+    setIsMysteryAudioPlaying(false);
+    mysteryCompletionRecordedRef.current = false;
+  };
+
+  const flashMysteryAnswer = (status, onComplete) => {
+    if (mysteryAnswerTimeoutRef.current) {
+      clearTimeout(mysteryAnswerTimeoutRef.current);
+    }
+    setMysteryAnswerStatus(status);
+    mysteryAnswerTimeoutRef.current = window.setTimeout(() => {
+      mysteryAnswerTimeoutRef.current = null;
+      if (status === 'wrong') setMysteryAnswerStatus('idle');
+      onComplete?.();
+    }, status === 'wrong' ? 700 : 520);
+  };
+
+  const stopMysteryAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+    setIsMysteryAudioPlaying(false);
+  };
+
+  const playMysterySong = () => {
+    const audio = audioRef.current;
+    if (!audio || !mysterySong) return;
+
+    audio.src = getSongPreviewUrl(mysterySong);
+    audio.currentTime = 0;
+    audio.load();
+    audio.play()
+      .then(() => setIsMysteryAudioPlaying(true))
+      .catch((error) => {
+        console.error('Mystery game audio failed', error);
+        setMysteryAudioError('Skladbu se nepodařilo přehrát.');
+      });
+  };
+
+  const revealMysterySong = async () => {
+    if (!mysterySong || mysteryCompletionRecordedRef.current) return;
+    mysteryCompletionRecordedRef.current = true;
+
+    try {
+      const quota = await recordDailySaulCompletion();
+      setMysteryQuota(quota);
+      if (!quota.allowed) {
+        setMysteryQuotaMessage('Limit byl mezitím vyčerpán v jiné kartě. Tato hra se už do limitu nevešla.');
+      }
+    } catch (error) {
+      console.error('Daily Saul completion could not be recorded', error);
+      setMysteryQuotaMessage(error.message || 'Dokončení hry se nepodařilo uložit.');
+      mysteryCompletionRecordedRef.current = false;
+    }
+
+    setMysteryTitleHints(5);
+    setMysteryStatus('revealed');
+    setMysteryPhase('revealed');
+    setMysteryFeedback(`Skladba: ${mysterySong.title}`);
+    playMysterySong();
+  };
+
+  const submitMysteryType = (type) => {
+    if (!mysterySong) return;
+    setMysteryTypeGuess(type);
+    if (type !== mysterySong.sourceType) {
+      setMysteryFeedback('To není správný typ skladby. Zkus to znovu.');
+      return;
+    }
+
+    if (type === 'single') {
+      setMysteryPhase('title');
+      setMysteryFeedback('Správně. Jde o singl bez alba; teď uhodni jeho název.');
+      return;
+    }
+
+    setMysteryPhase('album');
+    setMysteryFeedback('Správně. Teď uhodni album nebo projekt.');
+  };
+
+  const submitMysteryAlbum = (event) => {
+    event.preventDefault();
+    if (!mysterySong || !mysteryAlbumGuess.trim() || mysteryAnswerStatus === 'correct') return;
+    if (normalizeAnswer(mysteryAlbumGuess) !== normalizeAnswer(mysterySong.album)) {
+      setMysteryFeedback('Album nesouhlasí. Zkus další tip nebo nápovědu.');
+      flashMysteryAnswer('wrong');
+      return;
+    }
+
+    setMysteryFeedback('Správně. Teď uhodni název skladby.');
+    flashMysteryAnswer('correct', () => {
+      setMysteryAlbumRevealed(true);
+      setMysteryPhase('title');
+      setMysteryAnswerStatus('idle');
+    });
+  };
+
+  const revealMysteryAlbumHint = () => {
+    if (!mysterySong || mysteryAlbumRevealed) return;
+    const nextHint = Math.min(mysteryAlbumHints + 1, 3);
+    setMysteryAlbumHints(nextHint);
+    if (nextHint === 3) {
+      setMysteryAlbumRevealed(true);
+      setMysteryFeedback(`Album je „${mysterySong.album}“. Pokračuj k názvu skladby.`);
+    }
+  };
+
+  const submitMysteryTitle = (event) => {
+    event.preventDefault();
+    if (!mysterySong || !mysteryTitleGuess.trim() || mysteryAnswerStatus === 'correct') return;
+    const normalizedGuess = normalizeAnswer(mysteryTitleGuess);
+    const normalizedTitle = normalizeAnswer(mysterySong.title);
+    const normalizedSongName = normalizeAnswer(mysterySong.title.split(' - ')[0]);
+    if (normalizedGuess !== normalizedTitle && normalizedGuess !== normalizedSongName) {
+      setMysteryFeedback('Název nesouhlasí. Zkus další tip nebo nápovědu.');
+      flashMysteryAnswer('wrong');
+      return;
+    }
+    setMysteryFeedback('Správně!');
+    flashMysteryAnswer('correct', revealMysterySong);
+  };
+
+  const revealMysteryTitleHint = () => {
+    if (!mysterySong || mysteryStatus === 'revealed') return;
+    const nextHint = Math.min(mysteryTitleHints + 1, 5);
+    setMysteryTitleHints(nextHint);
+    if (nextHint === 5) revealMysterySong();
+  };
+
   const transitionToView = (nextView) => {
     if (nextView === currentView || viewTransitionPhaseRef.current !== 'idle') return;
 
@@ -494,6 +795,14 @@ function App() {
       setAlbumQuizStatus('idle');
       setAlbumQuizSong(null);
       albumQuizSongRef.current = null;
+    }
+
+    if (currentView === 'music-quiz' && nextView !== 'music-quiz') {
+      stopMysteryAudio();
+      if (mysteryAnswerTimeoutRef.current) {
+        clearTimeout(mysteryAnswerTimeoutRef.current);
+        mysteryAnswerTimeoutRef.current = null;
+      }
     }
 
     pendingViewRef.current = nextView;
@@ -515,11 +824,12 @@ function App() {
     }
   };
 
-  const getSongPool = () => (
-    includeFeats && featSongs.length > 0
-      ? [...songs, ...featSongs]
-      : songs
-  );
+  const getSongPool = (addFeats = includeFeats) => {
+    const saulSongPool = [...songs, ...saulSingles];
+    return addFeats && featSongs.length > 0
+      ? [...saulSongPool, ...featSongs]
+      : saulSongPool;
+  };
 
   const pickRandomSong = () => {
     if (songDeckRef.current.length === 0) {
@@ -825,11 +1135,7 @@ function App() {
       return [];
     }
 
-    const activeSongPool = includeFeats && featSongs.length > 0
-      ? [...songs, ...featSongs]
-      : songs;
-
-    return activeSongPool
+    return getSongPool()
       .filter((song) => {
         const normalizedQuery = normalizeAnswer(guess);
         const normalizedTitle = normalizeAnswer(song.title);
@@ -988,7 +1294,7 @@ function App() {
         </div>
       )}
 
-      <div className={`sg-header ${isRoundActive || score.total > 0 || currentView === 'album-quiz' ? 'sg-header-compact' : ''}`}>
+      <div className={`sg-header ${isRoundActive || score.total > 0 || currentView === 'album-quiz' || currentView === 'music-quiz' ? 'sg-header-compact' : ''}`}>
         {shouldShowUtilityChrome && (
           <div className="sg-kicker">
             Jsi pravý fanoušek Saula? Ověř si to přes:
@@ -1010,6 +1316,13 @@ function App() {
               className={`sg-tab ${currentView === 'album-quiz' ? 'is-active' : ''}`}
             >
               Album Quiz
+            </button>
+            <button
+              type="button"
+              onClick={() => transitionToView('music-quiz')}
+              className={`sg-tab ${currentView === 'music-quiz' ? 'is-active' : ''}`}
+            >
+              Daily Saul
             </button>
             <button
               type="button"
@@ -1255,6 +1568,180 @@ function App() {
           )}
           </div>
         </div>
+      ) : currentView === 'music-quiz' ? (
+        <div className="sg-album-view sg-daily-saul-view">
+          <div className="sg-album-heading sg-daily-saul-heading">
+            <p className="sg-eyebrow">DENNÍ VÝZVA · 3 KROKY</p>
+            <h2>Daily Saul</h2>
+            <p>Rozpoznej track, odhal jeho původ a nech se dovést až k názvu.</p>
+          </div>
+          <div className={`sg-panel sg-mystery-game sg-daily-saul-panel ${mysteryStatus === 'idle' ? 'is-idle' : ''}`}>
+            {mysteryStatus === 'idle' && (
+              <div className="sg-mystery-intro">
+                <button
+                  type="button"
+                  disabled={isMysteryQuotaLoading}
+                  onClick={startMysteryRound}
+                  className="sg-daily-saul-start"
+                >
+                  <span className="sg-daily-saul-start-mark" aria-hidden="true">▶</span>
+                  <span>{isMysteryQuotaLoading ? 'Ověřuji přístup…' : 'Spustit výzvu'}</span>
+                  <span className="sg-daily-saul-start-arrow" aria-hidden="true">↗</span>
+                </button>
+                {mysteryQuota && (
+                  <p className="sg-mystery-quota-remaining">
+                    Zbývá {mysteryQuota.remaining} z {DAILY_SAUL_LIMIT} dokončení v limitu 30 minut.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {mysteryStatus === 'blocked' && (
+              <div className="sg-mystery-quota-block">
+                <p className="sg-eyebrow">Daily Saul</p>
+                <h3>{mysteryQuotaError ? 'Přístup nelze ověřit' : 'Limit pro tuto chvíli vyčerpán'}</h3>
+                <p>{mysteryQuotaError || mysteryQuotaMessage}</p>
+                {mysteryQuota?.resetAt && (
+                  <p>Nová hra bude dostupná po {mysteryQuota.resetAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.</p>
+                )}
+                <button
+                  type="button"
+                  disabled={isMysteryQuotaLoading}
+                  onClick={startMysteryRound}
+                  className="sg-button sg-button-secondary"
+                >
+                  {isMysteryQuotaLoading ? 'Ověřuji…' : 'Zkontrolovat znovu'}
+                </button>
+              </div>
+            )}
+
+            {mysteryStatus === 'playing' && mysterySong && (
+              <>
+                <div className="sg-mystery-progress" key={`progress-${mysteryPhase}`}>
+                  <span>{mysteryPhase === 'type' ? '1 / 3' : mysteryPhase === 'album' ? '2 / 3' : mysterySong.sourceType === 'single' ? '2 / 2' : '3 / 3'}</span>
+                  <span>{mysteryPhase === 'type' ? 'Původ skladby' : mysteryPhase === 'album' ? 'Album / projekt' : 'Název skladby'}</span>
+                </div>
+
+                {mysteryPhase === 'type' && (
+                  <div className="sg-mystery-stage" key="mystery-type-stage">
+                    <h3>Jak se Saul podílel na skladbě?</h3>
+                    <div className="sg-mystery-type-options">
+                      {[
+                        { value: 'feat', label: 'Feat', note: 'Hostuje u jiného interpreta', number: '01' },
+                        { value: 'single', label: 'Singl', note: 'Samostatně vydaná skladba', number: '02' },
+                        { value: 'album', label: 'Z alba', note: 'Skladba z jeho alba', number: '03' },
+                      ].map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => submitMysteryType(option.value)}
+                          className={`sg-mystery-type-choice is-${option.value} ${mysteryTypeGuess === option.value ? 'is-selected' : ''}`}
+                        >
+                          <span className="sg-mystery-type-number">{option.number}</span>
+                          <strong>{option.label}</strong>
+                          <small>{option.note}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {mysteryPhase === 'album' && (
+                  <div className="sg-mystery-stage" key="mystery-album-stage">
+                    <h3>Ze kterého alba nebo projektu skladba je?</h3>
+                    {!mysteryAlbumRevealed ? (
+                      <>
+                        <form
+                          className={`sg-mystery-answer-row is-${mysteryAnswerStatus}`}
+                          onSubmit={submitMysteryAlbum}
+                        >
+                          <input
+                            value={mysteryAlbumGuess}
+                            onChange={(event) => setMysteryAlbumGuess(event.target.value)}
+                            placeholder="Napiš album nebo projekt"
+                            className={`sg-input sg-mystery-answer-input is-${mysteryAnswerStatus}`}
+                            aria-label="Název alba nebo projektu"
+                          />
+                          <button type="submit" className="sg-button sg-button-primary">Ověřit</button>
+                        </form>
+                        <button type="button" onClick={revealMysteryAlbumHint} className="sg-mystery-hint">
+                          <span className="sg-mystery-hint-icon" aria-hidden="true">?</span>
+                          <span>Nápověda {mysteryAlbumHints} / 3</span>
+                        </button>
+                        {mysteryAlbumHints > 0 && (
+                          <p className="sg-mystery-hint-text" key={`album-hint-${mysteryAlbumHints}`}>Začíná na: <strong>{mysterySong.album.slice(0, mysteryAlbumHints)}…</strong></p>
+                        )}
+                      </>
+                    ) : (
+                      <div className="sg-mystery-reveal-block">
+                        <p>Album / projekt: <strong>{mysterySong.album}</strong></p>
+                        <button type="button" onClick={() => setMysteryPhase('title')} className="sg-button sg-button-primary">
+                          Pokračovat k názvu skladby
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {mysteryPhase === 'title' && (
+                  <div className="sg-mystery-stage" key="mystery-title-stage">
+                    <h3>Jak se skladba jmenuje?</h3>
+                    <form
+                      className={`sg-mystery-answer-row is-${mysteryAnswerStatus}`}
+                      onSubmit={submitMysteryTitle}
+                    >
+                      <input
+                        value={mysteryTitleGuess}
+                        onChange={(event) => setMysteryTitleGuess(event.target.value)}
+                        placeholder="Napiš název skladby"
+                        className={`sg-input sg-mystery-answer-input is-${mysteryAnswerStatus}`}
+                        aria-label="Název skladby"
+                      />
+                      <button type="submit" className="sg-button sg-button-primary">Ověřit</button>
+                    </form>
+                    <button type="button" onClick={revealMysteryTitleHint} className="sg-mystery-hint">
+                      <span className="sg-mystery-hint-icon" aria-hidden="true">?</span>
+                      <span>Nápověda {mysteryTitleHints} / 5</span>
+                    </button>
+                    {mysteryTitleHints > 0 && (
+                      <p className="sg-mystery-hint-text" key={`title-hint-${mysteryTitleHints}`}>Název začíná na: <strong>{mysterySong.title.slice(0, mysteryTitleHints)}…</strong></p>
+                    )}
+                  </div>
+                )}
+
+                {mysteryFeedback && (
+                  <p className={`sg-mystery-feedback is-${mysteryAnswerStatus}`}>
+                    {mysteryFeedback}
+                  </p>
+                )}
+                {mysteryAudioError && <p role="alert" className="sg-album-audio-error">{mysteryAudioError}</p>}
+              </>
+            )}
+
+            {mysteryStatus === 'revealed' && mysterySong && (
+              <div className="sg-mystery-revealed" key={`revealed-${mysterySong.id}`}>
+                <p className="sg-eyebrow">Odhalená skladba</p>
+                <h3>{mysterySong.title}</h3>
+                <p>{mysterySong.sourceType === 'feat' ? `Feat · ${mysterySong.album}` : mysterySong.sourceType === 'single' ? 'Samostatný singl' : mysterySong.album}</p>
+                {mysteryQuota && (
+                  <p className="sg-mystery-quota-remaining">
+                    Zbývá {mysteryQuota.remaining} z {DAILY_SAUL_LIMIT} dokončení v limitu 30 minut.
+                  </p>
+                )}
+                {mysteryQuotaMessage && <p role="status" className="sg-mystery-quota-message">{mysteryQuotaMessage}</p>}
+                {mysteryAudioError && <p role="alert" className="sg-album-audio-error">{mysteryAudioError}</p>}
+                <div className="sg-mystery-actions">
+                  <button type="button" onClick={playMysterySong} className="sg-button sg-button-secondary">
+                    {isMysteryAudioPlaying ? 'Přehrát znovu' : 'Přehrát skladbu'}
+                  </button>
+                  <button type="button" onClick={startMysteryRound} className="sg-button sg-button-primary">
+                    Další skladba
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       ) : (
         <div className={`sg-panel sg-game ${showHeroStartButton ? 'sg-game-intro' : ''}`}>
           {!isFinished ? (
@@ -1272,11 +1759,7 @@ function App() {
                     onChange={(event) => {
                       const nextValue = event.target.checked;
                       setIncludeFeats(nextValue);
-                      songDeckRef.current = shuffleSongDeck(
-                        nextValue && featSongs.length > 0
-                          ? [...songs, ...featSongs]
-                          : songs
-                      );
+                      songDeckRef.current = shuffleSongDeck(getSongPool(nextValue));
                       setScore({ correct: 0, total: 0 });
                       setGuess('');
                       setFeedback(null);

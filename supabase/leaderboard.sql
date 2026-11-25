@@ -79,3 +79,103 @@ create policy "Anyone can submit album quiz entries"
 
 create index if not exists album_quiz_entries_created_at_score_idx
   on public.album_quiz_entries (created_at desc, score desc, avg_seconds asc);
+
+create table if not exists public.daily_saul_completions (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  completed_at timestamptz not null default now()
+);
+
+create index if not exists daily_saul_completions_user_completed_idx
+  on public.daily_saul_completions (user_id, completed_at desc);
+
+alter table public.daily_saul_completions enable row level security;
+revoke all on public.daily_saul_completions from anon, authenticated;
+
+create or replace function public.get_daily_saul_quota()
+returns table (allowed boolean, remaining integer, reset_at timestamptz)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  requesting_user uuid := auth.uid();
+  completed_count bigint;
+  first_completion timestamptz;
+begin
+  if requesting_user is null then
+    raise exception 'Daily Saul requires an authenticated user';
+  end if;
+
+  delete from public.daily_saul_completions
+  where user_id = requesting_user
+    and completed_at <= now() - interval '30 minutes';
+
+  select count(*), min(completed_at)
+    into completed_count, first_completion
+  from public.daily_saul_completions
+  where user_id = requesting_user
+    and completed_at > now() - interval '30 minutes';
+
+  return query
+    select completed_count < 5,
+      greatest(5 - completed_count, 0)::integer,
+      case when completed_count >= 5
+        then first_completion + interval '30 minutes'
+        else null::timestamptz
+      end;
+end;
+$$;
+
+create or replace function public.complete_daily_saul_game()
+returns table (allowed boolean, remaining integer, reset_at timestamptz)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  requesting_user uuid := auth.uid();
+  completed_count bigint;
+  first_completion timestamptz;
+begin
+  if requesting_user is null then
+    raise exception 'Daily Saul requires an authenticated user';
+  end if;
+
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(requesting_user::text, 0)
+  );
+
+  delete from public.daily_saul_completions
+  where user_id = requesting_user
+    and completed_at <= now() - interval '30 minutes';
+
+  select count(*), min(completed_at)
+    into completed_count, first_completion
+  from public.daily_saul_completions
+  where user_id = requesting_user
+    and completed_at > now() - interval '30 minutes';
+
+  if completed_count >= 5 then
+    return query
+      select false, 0::integer, first_completion + interval '30 minutes';
+    return;
+  end if;
+
+  insert into public.daily_saul_completions (user_id) values (requesting_user);
+  completed_count := completed_count + 1;
+
+  return query
+    select true,
+      greatest(5 - completed_count, 0)::integer,
+      case when completed_count >= 5
+        then coalesce(first_completion, now()) + interval '30 minutes'
+        else null::timestamptz
+      end;
+end;
+$$;
+
+revoke all on function public.get_daily_saul_quota() from public, anon, authenticated;
+revoke all on function public.complete_daily_saul_game() from public, anon, authenticated;
+grant execute on function public.get_daily_saul_quota() to authenticated;
+grant execute on function public.complete_daily_saul_game() to authenticated;
