@@ -152,6 +152,10 @@ const ALBUM_LEADERBOARD_STORAGE_KEY = 'saulguesser_album_quiz_leaderboard';
 const LEADERBOARD_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const LEADERBOARD_TABLE = 'leaderboard_entries';
 const ALBUM_LEADERBOARD_TABLE = 'album_quiz_entries';
+const DAILY_SAUL_LEADERBOARD_STORAGE_KEY = 'saulguesser_daily_saul_leaderboard';
+const DAILY_SAUL_LEADERBOARD_TABLE = 'daily_saul_entries';
+const DAILY_SAUL_SESSION_STORAGE_KEY = 'saulguesser_daily_saul_session';
+const DAILY_SAUL_MAX_POINTS = 10;
 const LEADERBOARD_LIMIT = 100;
 const DAILY_SAUL_COMPLETION_STORAGE_KEY = 'saulguesser_daily_saul_completions';
 const DAILY_SAUL_LIMIT = 5;
@@ -159,17 +163,33 @@ const DAILY_SAUL_WINDOW_MS = 30 * 60 * 1000;
 
 const getDailySaulQuotaFromTimestamps = (timestamps) => {
   const now = Date.now();
-  const recentTimestamps = timestamps
+  const sortedTimestamps = timestamps
     .map((timestamp) => new Date(timestamp).getTime())
-    .filter((timestamp) => Number.isFinite(timestamp) && now - timestamp < DAILY_SAUL_WINDOW_MS);
-  const oldestCompletion = Math.min(...recentTimestamps);
-  const remaining = Math.max(0, DAILY_SAUL_LIMIT - recentTimestamps.length);
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
 
-  return {
-    allowed: remaining > 0,
-    remaining,
-    resetAt: remaining === 0 ? new Date(oldestCompletion + DAILY_SAUL_WINDOW_MS) : null,
-  };
+  let cycle = [];
+  let lockedUntil = null;
+  sortedTimestamps.forEach((timestamp) => {
+    if (lockedUntil !== null && timestamp < lockedUntil) return;
+    if (lockedUntil !== null) {
+      cycle = [];
+      lockedUntil = null;
+    }
+    cycle = cycle.filter((completion) => timestamp - completion < DAILY_SAUL_WINDOW_MS);
+    cycle.push(timestamp);
+    if (cycle.length >= DAILY_SAUL_LIMIT) lockedUntil = timestamp + DAILY_SAUL_WINDOW_MS;
+  });
+
+  if (lockedUntil !== null && now < lockedUntil) {
+    return { allowed: false, remaining: 0, resetAt: new Date(lockedUntil) };
+  }
+
+  const activeCount = lockedUntil !== null
+    ? 0
+    : cycle.filter((completion) => now - completion < DAILY_SAUL_WINDOW_MS).length;
+  const remaining = Math.max(0, DAILY_SAUL_LIMIT - activeCount);
+  return { allowed: remaining > 0, remaining, resetAt: null };
 };
 
 const loadLocalDailySaulCompletions = () => {
@@ -180,7 +200,8 @@ const loadLocalDailySaulCompletions = () => {
     const recentTimestamps = Array.isArray(timestamps)
       ? timestamps.filter((timestamp) => {
         const completionTime = new Date(timestamp).getTime();
-        return Number.isFinite(completionTime) && now - completionTime < DAILY_SAUL_WINDOW_MS;
+        // A lockout can end up to 2 windows after the oldest game of its cycle.
+        return Number.isFinite(completionTime) && now - completionTime < 2 * DAILY_SAUL_WINDOW_MS;
       })
       : [];
     window.localStorage.setItem(DAILY_SAUL_COMPLETION_STORAGE_KEY, JSON.stringify(recentTimestamps));
@@ -340,6 +361,75 @@ const saveAlbumLeaderboardEntry = async ({ name, score, avgSeconds }) => {
   return mapAlbumLeaderboardRow(data);
 };
 
+const loadDailySaulLeaderboard = async () => {
+  if (supabaseConfigError) throw new Error(supabaseConfigError);
+  if (!supabase) return loadLocalLeaderboard(DAILY_SAUL_LEADERBOARD_STORAGE_KEY);
+
+  const { data, error } = await supabase
+    .from(DAILY_SAUL_LEADERBOARD_TABLE)
+    .select('id, name, score, avg_seconds, created_at')
+    .gte('created_at', new Date(Date.now() - LEADERBOARD_RETENTION_MS).toISOString())
+    .order('score', { ascending: false })
+    .order('avg_seconds', { ascending: true })
+    .limit(LEADERBOARD_LIMIT);
+
+  if (error) throw error;
+  return data.map(mapLeaderboardRow);
+};
+
+const saveDailySaulLeaderboardEntry = async ({ name, score, avgSeconds }) => {
+  if (supabaseConfigError) throw new Error(supabaseConfigError);
+  if (!supabase) {
+    const entry = {
+      id: `${Date.now()}-${name}`,
+      name,
+      score,
+      avgSeconds,
+      timestamp: new Date().toISOString(),
+    };
+    const entries = purgeOldEntries([
+      ...loadLocalLeaderboard(DAILY_SAUL_LEADERBOARD_STORAGE_KEY),
+      entry,
+    ]);
+    window.localStorage.setItem(DAILY_SAUL_LEADERBOARD_STORAGE_KEY, JSON.stringify(entries));
+    return entry;
+  }
+
+  const { data, error } = await supabase
+    .from(DAILY_SAUL_LEADERBOARD_TABLE)
+    .insert({ name, score, avg_seconds: avgSeconds })
+    .select('id, name, score, avg_seconds, created_at')
+    .single();
+
+  if (error) throw error;
+  return mapLeaderboardRow(data);
+};
+
+const emptyDailySaulSession = () => ({ games: [], registered: false });
+
+const loadDailySaulSession = () => {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(DAILY_SAUL_SESSION_STORAGE_KEY) || 'null');
+    if (!stored || !Array.isArray(stored.games)) return emptyDailySaulSession();
+    return {
+      games: stored.games
+        .filter((game) => Number.isFinite(game?.points) && Number.isFinite(game?.seconds))
+        .slice(0, DAILY_SAUL_LIMIT),
+      registered: Boolean(stored.registered),
+    };
+  } catch {
+    return emptyDailySaulSession();
+  }
+};
+
+const saveDailySaulSession = (session) => {
+  try {
+    window.localStorage.setItem(DAILY_SAUL_SESSION_STORAGE_KEY, JSON.stringify(session));
+  } catch {
+    // The session still lives in React state for this visit.
+  }
+};
+
 const saveLeaderboardEntry = async ({ name, score, avgSeconds }) => {
   if (supabaseConfigError) throw new Error(supabaseConfigError);
   if (!supabase) {
@@ -364,6 +454,13 @@ const saveLeaderboardEntry = async ({ name, score, avgSeconds }) => {
 
   if (error) throw error;
   return mapLeaderboardRow(data);
+};
+
+const formatCountdown = (milliseconds) => {
+  const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 };
 
 const getAssetUrl = (path) => {
@@ -410,6 +507,15 @@ function App() {
   const [isMysteryQuotaLoading, setIsMysteryQuotaLoading] = useState(false);
   const [mysteryQuotaError, setMysteryQuotaError] = useState('');
   const [mysteryQuotaMessage, setMysteryQuotaMessage] = useState('');
+  const [mysteryQuotaNow, setMysteryQuotaNow] = useState(() => Date.now());
+  const [mysteryRoundPoints, setMysteryRoundPoints] = useState(null);
+  const [dailySaulSession, setDailySaulSession] = useState(loadDailySaulSession);
+  const [dailySaulLeaderboard, setDailySaulLeaderboard] = useState([]);
+  const [isDailySaulLeaderboardLoading, setIsDailySaulLeaderboardLoading] = useState(true);
+  const [dailySaulLeaderboardError, setDailySaulLeaderboardError] = useState('');
+  const [dailySaulPlayerName, setDailySaulPlayerName] = useState('');
+  const [isDailySaulSubmitting, setIsDailySaulSubmitting] = useState(false);
+  const [dailySaulSubmitMessage, setDailySaulSubmitMessage] = useState('');
   const [isMysteryAudioPlaying, setIsMysteryAudioPlaying] = useState(false);
   const [mysteryAudioError, setMysteryAudioError] = useState('');
   const [includeFeats, setIncludeFeats] = useState(false);
@@ -454,6 +560,8 @@ function App() {
   const mysteryAnswerTimeoutRef = useRef(null);
   const mysteryStartPendingRef = useRef(false);
   const mysteryCompletionRecordedRef = useRef(false);
+  const mysteryMistakesRef = useRef(0);
+  const mysteryRoundStartRef = useRef(0);
   const albumQuizSongRef = useRef(null);
   const albumQuizRoundActiveRef = useRef(false);
   const albumQuizRemainingTimeRef = useRef(15);
@@ -619,8 +727,14 @@ function App() {
       setMysteryQuota(quota);
       if (!quota.allowed) {
         setMysteryStatus('blocked');
-        setMysteryQuotaMessage('V posledních 30 minutách už bylo dokončeno 5 her. Nové hraní se odemkne po vypršení limitu.');
+        setMysteryQuotaMessage('Dohrál jsi 5 her. Další hra se odemkne 30 minut po dohrání té poslední.');
         return;
+      }
+      if (quota.remaining === DAILY_SAUL_LIMIT) {
+        const freshSession = emptyDailySaulSession();
+        setDailySaulSession(freshSession);
+        saveDailySaulSession(freshSession);
+        setDailySaulSubmitMessage('');
       }
     } catch (error) {
       console.error('Daily Saul quota check failed', error);
@@ -659,7 +773,10 @@ function App() {
     setMysteryAudioError('');
     setMysteryQuotaMessage('');
     setIsMysteryAudioPlaying(false);
+    setMysteryRoundPoints(null);
     mysteryCompletionRecordedRef.current = false;
+    mysteryMistakesRef.current = 0;
+    mysteryRoundStartRef.current = Date.now();
   };
 
   const flashMysteryAnswer = (status, onComplete) => {
@@ -697,15 +814,30 @@ function App() {
       });
   };
 
-  const revealMysterySong = async () => {
+  const revealMysterySong = async ({ skipPlayback = false, points = 0 } = {}) => {
     if (!mysterySong || mysteryCompletionRecordedRef.current) return;
     mysteryCompletionRecordedRef.current = true;
+
+    // Browsers only allow audio.play() synchronously inside a user gesture, so it must run before any await.
+    if (!skipPlayback) playMysterySong();
+
+    const seconds = Math.min(1800, (Date.now() - mysteryRoundStartRef.current) / 1000);
+    setMysteryRoundPoints(points);
 
     try {
       const quota = await recordDailySaulCompletion();
       setMysteryQuota(quota);
       if (!quota.allowed) {
         setMysteryQuotaMessage('Limit byl mezitím vyčerpán v jiné kartě. Tato hra se už do limitu nevešla.');
+      } else {
+        setDailySaulSession((session) => {
+          const nextSession = {
+            ...session,
+            games: [...session.games, { points, seconds }].slice(-DAILY_SAUL_LIMIT),
+          };
+          saveDailySaulSession(nextSession);
+          return nextSession;
+        });
       }
     } catch (error) {
       console.error('Daily Saul completion could not be recorded', error);
@@ -717,13 +849,13 @@ function App() {
     setMysteryStatus('revealed');
     setMysteryPhase('revealed');
     setMysteryFeedback(`Skladba: ${mysterySong.title}`);
-    playMysterySong();
   };
 
   const submitMysteryType = (type) => {
     if (!mysterySong) return;
     setMysteryTypeGuess(type);
     if (type !== mysterySong.sourceType) {
+      mysteryMistakesRef.current += 1;
       setMysteryFeedback('To není správný typ skladby. Zkus to znovu.');
       return;
     }
@@ -742,6 +874,7 @@ function App() {
     event.preventDefault();
     if (!mysterySong || !mysteryAlbumGuess.trim() || mysteryAnswerStatus === 'correct') return;
     if (normalizeAnswer(mysteryAlbumGuess) !== normalizeAnswer(mysterySong.album)) {
+      mysteryMistakesRef.current += 1;
       setMysteryFeedback('Album nesouhlasí. Zkus další tip nebo nápovědu.');
       flashMysteryAnswer('wrong');
       return;
@@ -772,12 +905,18 @@ function App() {
     const normalizedTitle = normalizeAnswer(mysterySong.title);
     const normalizedSongName = normalizeAnswer(mysterySong.title.split(' - ')[0]);
     if (normalizedGuess !== normalizedTitle && normalizedGuess !== normalizedSongName) {
+      mysteryMistakesRef.current += 1;
       setMysteryFeedback('Název nesouhlasí. Zkus další tip nebo nápovědu.');
       flashMysteryAnswer('wrong');
       return;
     }
+    const points = Math.max(
+      0,
+      DAILY_SAUL_MAX_POINTS - mysteryAlbumHints - mysteryTitleHints - mysteryMistakesRef.current,
+    );
     setMysteryFeedback('Správně!');
-    flashMysteryAnswer('correct', revealMysterySong);
+    playMysterySong();
+    flashMysteryAnswer('correct', () => revealMysterySong({ skipPlayback: true, points }));
   };
 
   const revealMysteryTitleHint = () => {
@@ -1097,6 +1236,88 @@ function App() {
     }
   };
 
+  const dailySaulTotalPoints = dailySaulSession.games.reduce((sum, game) => sum + game.points, 0);
+  const dailySaulAverageSeconds = dailySaulSession.games.length
+    ? dailySaulSession.games.reduce((sum, game) => sum + game.seconds, 0) / dailySaulSession.games.length
+    : 0;
+  const isDailySaulSessionComplete = dailySaulSession.games.length >= DAILY_SAUL_LIMIT;
+
+  const handleDailySaulLeaderboardSubmit = async (event) => {
+    event.preventDefault();
+    if (!isDailySaulSessionComplete || dailySaulSession.registered) return;
+    const trimmedName = dailySaulPlayerName.trim();
+    if (!trimmedName) {
+      setDailySaulSubmitMessage('Zadej prosím jméno.');
+      return;
+    }
+    if (trimmedName.length > 40) {
+      setDailySaulSubmitMessage('Jméno může mít nejvýše 40 znaků.');
+      return;
+    }
+
+    setIsDailySaulSubmitting(true);
+    setDailySaulSubmitMessage('');
+    try {
+      const entry = await saveDailySaulLeaderboardEntry({
+        name: trimmedName,
+        score: dailySaulTotalPoints,
+        avgSeconds: Number(dailySaulAverageSeconds.toFixed(2)),
+      });
+      setDailySaulLeaderboard((entries) => [...entries, entry]);
+      const registeredSession = { ...dailySaulSession, registered: true };
+      setDailySaulSession(registeredSession);
+      saveDailySaulSession(registeredSession);
+      setDailySaulSubmitMessage(supabaseConfigured
+        ? 'Výsledek byl uložen do Daily Saul leaderboardu.'
+        : 'Výsledek je uložen jen v tomto prohlížeči.');
+    } catch (error) {
+      console.error('Failed to save Daily Saul leaderboard entry', error);
+      setDailySaulSubmitMessage(`Výsledek se nepodařilo uložit: ${error.message || 'neznámá chyba'}`);
+    } finally {
+      setIsDailySaulSubmitting(false);
+    }
+  };
+
+  const dailySaulRegisterBlock = isDailySaulSessionComplete ? (
+    <div className="sg-register sg-daily-saul-register">
+      <h3>Zapsat se do Daily Saul leaderboardu</h3>
+      <p className="sg-daily-saul-total">
+        Celkem <strong>{dailySaulTotalPoints} / {DAILY_SAUL_LIMIT * DAILY_SAUL_MAX_POINTS}</strong> bodů
+        · průměr {dailySaulAverageSeconds.toFixed(1)} s na hru
+      </p>
+      <form onSubmit={handleDailySaulLeaderboardSubmit} className="sg-register-form">
+        <label className="sr-only" htmlFor="dailySaulPlayerName">Jméno</label>
+        <input
+          id="dailySaulPlayerName"
+          value={dailySaulPlayerName}
+          onChange={(event) => setDailySaulPlayerName(event.target.value)}
+          maxLength={40}
+          placeholder="Zadej své jméno"
+          className="sg-input"
+          disabled={dailySaulSession.registered}
+        />
+        <button
+          type="submit"
+          disabled={dailySaulSession.registered || isDailySaulSubmitting}
+          className="sg-button sg-button-primary"
+        >
+          {isDailySaulSubmitting ? 'Ukládám…' : dailySaulSession.registered ? 'Uloženo' : 'Uložit výsledek'}
+        </button>
+      </form>
+      {dailySaulSubmitMessage && <p className="sg-submit-message">{dailySaulSubmitMessage}</p>}
+      <button
+        type="button"
+        onClick={() => {
+          setLeaderboardCategory('daily');
+          transitionToView('leaderboard');
+        }}
+        className="sg-button sg-button-secondary"
+      >
+        Zobrazit Daily Saul leaderboard
+      </button>
+    </div>
+  ) : null;
+
   const handleLeaderboardSubmit = async (event) => {
     event.preventDefault();
     const trimmedName = playerName.trim();
@@ -1165,15 +1386,25 @@ function App() {
     });
   }, [albumLeaderboard]);
 
-  const sortedLeaderboard = leaderboardCategory === 'album'
-    ? sortedAlbumLeaderboard
-    : sortedSongLeaderboard;
-  const activeLeaderboardLoading = leaderboardCategory === 'album'
-    ? isAlbumLeaderboardLoading
-    : isLeaderboardLoading;
-  const activeLeaderboardError = leaderboardCategory === 'album'
-    ? albumLeaderboardError
-    : leaderboardError;
+  const sortedDailySaulLeaderboard = useMemo(() => {
+    return [...dailySaulLeaderboard].sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.avgSeconds - b.avgSeconds;
+    });
+  }, [dailySaulLeaderboard]);
+
+  const sortedLeaderboard = {
+    album: sortedAlbumLeaderboard,
+    daily: sortedDailySaulLeaderboard,
+  }[leaderboardCategory] ?? sortedSongLeaderboard;
+  const activeLeaderboardLoading = {
+    album: isAlbumLeaderboardLoading,
+    daily: isDailySaulLeaderboardLoading,
+  }[leaderboardCategory] ?? isLeaderboardLoading;
+  const activeLeaderboardError = {
+    album: albumLeaderboardError,
+    daily: dailySaulLeaderboardError,
+  }[leaderboardCategory] ?? leaderboardError;
 
   const refreshLeaderboard = async () => {
     setIsLeaderboardLoading(true);
@@ -1200,6 +1431,24 @@ function App() {
       setIsAlbumLeaderboardLoading(false);
     }
   };
+
+  const refreshDailySaulLeaderboard = async () => {
+    setIsDailySaulLeaderboardLoading(true);
+    setDailySaulLeaderboardError('');
+    try {
+      setDailySaulLeaderboard(await loadDailySaulLeaderboard());
+    } catch (error) {
+      console.error('Failed to load Daily Saul leaderboard', error);
+      setDailySaulLeaderboardError(error.message || 'Nepodařilo se načíst Daily Saul leaderboard.');
+    } finally {
+      setIsDailySaulLeaderboardLoading(false);
+    }
+  };
+
+  const refreshActiveLeaderboard = {
+    album: refreshAlbumLeaderboard,
+    daily: refreshDailySaulLeaderboard,
+  }[leaderboardCategory] ?? refreshLeaderboard;
 
   useEffect(() => {
     let isActive = true;
@@ -1233,6 +1482,21 @@ function App() {
         if (isActive) setIsAlbumLeaderboardLoading(false);
       });
 
+    setIsDailySaulLeaderboardLoading(true);
+    loadDailySaulLeaderboard()
+      .then((entries) => {
+        if (isActive) setDailySaulLeaderboard(entries);
+      })
+      .catch((error) => {
+        console.error('Failed to load Daily Saul leaderboard', error);
+        if (isActive) {
+          setDailySaulLeaderboardError(error.message || 'Nepodařilo se načíst Daily Saul leaderboard.');
+        }
+      })
+      .finally(() => {
+        if (isActive) setIsDailySaulLeaderboardLoading(false);
+      });
+
     const initialSong = pickRandomSong('saul');
     currentSongRef.current = initialSong;
     setCurrentSong(initialSong);
@@ -1240,6 +1504,28 @@ function App() {
       isActive = false;
     };
   }, []);
+
+  const mysteryResetAtMs = mysteryQuota?.resetAt ? mysteryQuota.resetAt.getTime() : null;
+
+  useEffect(() => {
+    if (mysteryResetAtMs === null) return undefined;
+    setMysteryQuotaNow(Date.now());
+    const intervalId = window.setInterval(() => {
+      const now = Date.now();
+      setMysteryQuotaNow(now);
+      if (now >= mysteryResetAtMs) {
+        window.clearInterval(intervalId);
+        setMysteryQuota({ allowed: true, remaining: DAILY_SAUL_LIMIT, resetAt: null });
+        setMysteryQuotaMessage('');
+        setMysteryStatus((status) => (status === 'blocked' ? 'idle' : status));
+      }
+    }, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [mysteryResetAtMs]);
+
+  const mysteryCountdown = mysteryResetAtMs !== null
+    ? formatCountdown(mysteryResetAtMs - mysteryQuotaNow)
+    : null;
 
   useEffect(() => {
     return () => {
@@ -1360,6 +1646,13 @@ function App() {
                 >
                   Album Quiz
                 </button>
+                <button
+                  type="button"
+                  className={`sg-leaderboard-category ${leaderboardCategory === 'daily' ? 'is-active' : ''}`}
+                  onClick={() => setLeaderboardCategory('daily')}
+                >
+                  Daily Saul
+                </button>
               </div>
             </div>
             <div className="sg-section-actions">
@@ -1385,7 +1678,7 @@ function App() {
               <p>Nepodařilo se načíst leaderboard: {activeLeaderboardError}</p>
               <button
                 type="button"
-                onClick={leaderboardCategory === 'album' ? refreshAlbumLeaderboard : refreshLeaderboard}
+                onClick={refreshActiveLeaderboard}
                 disabled={activeLeaderboardLoading}
                 className="sg-button sg-button-secondary"
               >
@@ -1407,7 +1700,7 @@ function App() {
                 <span>#</span>
                 <span>Hráč</span>
                 <span>Skóre</span>
-                <span>{leaderboardCategory === 'song' ? 'Průměr' : 'Čas'}</span>
+                <span>{leaderboardCategory === 'album' ? 'Čas' : 'Průměr'}</span>
                 <span>Datum</span>
               </div>
               {sortedLeaderboard.map((entry, index) => (
@@ -1601,9 +1894,16 @@ function App() {
                 <p className="sg-eyebrow">Daily Saul</p>
                 <h3>{mysteryQuotaError ? 'Přístup nelze ověřit' : 'Limit pro tuto chvíli vyčerpán'}</h3>
                 <p>{mysteryQuotaError || mysteryQuotaMessage}</p>
-                {mysteryQuota?.resetAt && (
-                  <p>Nová hra bude dostupná po {mysteryQuota.resetAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.</p>
+                {mysteryCountdown && (
+                  <div className="sg-mystery-countdown" role="timer" aria-live="off">
+                    <span className="sg-mystery-countdown-label">Další hra za</span>
+                    <strong className="sg-mystery-countdown-value">{mysteryCountdown}</strong>
+                    <span className="sg-mystery-countdown-at">
+                      v {mysteryQuota.resetAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
                 )}
+                {!mysteryQuotaError && !dailySaulSession.registered && dailySaulRegisterBlock}
                 <button
                   type="button"
                   disabled={isMysteryQuotaLoading}
@@ -1723,10 +2023,28 @@ function App() {
                 <p className="sg-eyebrow">Odhalená skladba</p>
                 <h3>{mysterySong.title}</h3>
                 <p>{mysterySong.sourceType === 'feat' ? `Feat · ${mysterySong.album}` : mysterySong.sourceType === 'single' ? 'Samostatný singl' : mysterySong.album}</p>
+                {mysteryRoundPoints !== null && (
+                  <p className="sg-daily-saul-points">
+                    <strong>+{mysteryRoundPoints}</strong> / {DAILY_SAUL_MAX_POINTS} bodů
+                    {dailySaulSession.games.length > 0 && (
+                      <span> · hra {dailySaulSession.games.length} / {DAILY_SAUL_LIMIT}, celkem {dailySaulTotalPoints} bodů</span>
+                    )}
+                  </p>
+                )}
+                {dailySaulRegisterBlock}
                 {mysteryQuota && (
                   <p className="sg-mystery-quota-remaining">
                     Zbývá {mysteryQuota.remaining} z {DAILY_SAUL_LIMIT} dokončení v limitu 30 minut.
                   </p>
+                )}
+                {mysteryCountdown && (
+                  <div className="sg-mystery-countdown" role="timer" aria-live="off">
+                    <span className="sg-mystery-countdown-label">Další hra za</span>
+                    <strong className="sg-mystery-countdown-value">{mysteryCountdown}</strong>
+                    <span className="sg-mystery-countdown-at">
+                      v {mysteryQuota.resetAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
                 )}
                 {mysteryQuotaMessage && <p role="status" className="sg-mystery-quota-message">{mysteryQuotaMessage}</p>}
                 {mysteryAudioError && <p role="alert" className="sg-album-audio-error">{mysteryAudioError}</p>}

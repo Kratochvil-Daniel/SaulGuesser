@@ -80,6 +80,42 @@ create policy "Anyone can submit album quiz entries"
 create index if not exists album_quiz_entries_created_at_score_idx
   on public.album_quiz_entries (created_at desc, score desc, avg_seconds asc);
 
+create table if not exists public.daily_saul_entries (
+  id uuid primary key default gen_random_uuid(),
+  name text not null check (char_length(btrim(name)) between 1 and 40),
+  score integer not null check (score between 0 and 50),
+  avg_seconds numeric(6, 2) not null check (avg_seconds between 0 and 1800),
+  created_at timestamptz not null default now()
+);
+
+alter table public.daily_saul_entries enable row level security;
+
+revoke all on public.daily_saul_entries from anon, authenticated;
+grant select, insert on public.daily_saul_entries to anon, authenticated;
+
+drop policy if exists "Anyone can read daily saul entries" on public.daily_saul_entries;
+create policy "Anyone can read daily saul entries"
+  on public.daily_saul_entries
+  for select
+  to anon, authenticated
+  using (true);
+
+drop policy if exists "Anyone can submit daily saul entries" on public.daily_saul_entries;
+create policy "Anyone can submit daily saul entries"
+  on public.daily_saul_entries
+  for insert
+  to anon, authenticated
+  with check (
+    char_length(btrim(name)) between 1 and 40
+    and score between 0 and 50
+    and avg_seconds between 0 and 1800
+    and created_at <= now()
+    and created_at >= now() - interval '5 minutes'
+  );
+
+create index if not exists daily_saul_entries_created_at_score_idx
+  on public.daily_saul_entries (created_at desc, score desc, avg_seconds asc);
+
 create table if not exists public.daily_saul_completions (
   id bigint generated always as identity primary key,
   user_id uuid not null references auth.users (id) on delete cascade,
@@ -92,6 +128,15 @@ create index if not exists daily_saul_completions_user_completed_idx
 alter table public.daily_saul_completions enable row level security;
 revoke all on public.daily_saul_completions from anon, authenticated;
 
+-- After the 5th completed game the user is locked out for 30 minutes from that game.
+create table if not exists public.daily_saul_locks (
+  user_id uuid primary key references auth.users (id) on delete cascade,
+  locked_until timestamptz not null
+);
+
+alter table public.daily_saul_locks enable row level security;
+revoke all on public.daily_saul_locks from anon, authenticated;
+
 create or replace function public.get_daily_saul_quota()
 returns table (allowed boolean, remaining integer, reset_at timestamptz)
 language plpgsql
@@ -101,29 +146,35 @@ as $$
 declare
   requesting_user uuid := auth.uid();
   completed_count bigint;
-  first_completion timestamptz;
+  lock_until timestamptz;
 begin
   if requesting_user is null then
     raise exception 'Daily Saul requires an authenticated user';
+  end if;
+
+  select locked_until into lock_until
+  from public.daily_saul_locks
+  where user_id = requesting_user;
+
+  if lock_until is not null and lock_until > now() then
+    return query select false, 0::integer, lock_until;
+    return;
   end if;
 
   delete from public.daily_saul_completions
   where user_id = requesting_user
     and completed_at <= now() - interval '30 minutes';
 
-  select count(*), min(completed_at)
-    into completed_count, first_completion
+  select count(*)
+    into completed_count
   from public.daily_saul_completions
   where user_id = requesting_user
-    and completed_at > now() - interval '30 minutes';
+    and completed_at > greatest(coalesce(lock_until, '-infinity'::timestamptz), now() - interval '30 minutes');
 
   return query
     select completed_count < 5,
       greatest(5 - completed_count, 0)::integer,
-      case when completed_count >= 5
-        then first_completion + interval '30 minutes'
-        else null::timestamptz
-      end;
+      null::timestamptz;
 end;
 $$;
 
@@ -136,7 +187,7 @@ as $$
 declare
   requesting_user uuid := auth.uid();
   completed_count bigint;
-  first_completion timestamptz;
+  lock_until timestamptz;
 begin
   if requesting_user is null then
     raise exception 'Daily Saul requires an authenticated user';
@@ -146,32 +197,42 @@ begin
     pg_catalog.hashtextextended(requesting_user::text, 0)
   );
 
+  select locked_until into lock_until
+  from public.daily_saul_locks
+  where user_id = requesting_user;
+
+  if lock_until is not null and lock_until > now() then
+    return query select false, 0::integer, lock_until;
+    return;
+  end if;
+
   delete from public.daily_saul_completions
   where user_id = requesting_user
     and completed_at <= now() - interval '30 minutes';
 
-  select count(*), min(completed_at)
-    into completed_count, first_completion
+  select count(*)
+    into completed_count
   from public.daily_saul_completions
   where user_id = requesting_user
-    and completed_at > now() - interval '30 minutes';
-
-  if completed_count >= 5 then
-    return query
-      select false, 0::integer, first_completion + interval '30 minutes';
-    return;
-  end if;
+    and completed_at > greatest(coalesce(lock_until, '-infinity'::timestamptz), now() - interval '30 minutes');
 
   insert into public.daily_saul_completions (user_id) values (requesting_user);
   completed_count := completed_count + 1;
 
+  if completed_count >= 5 then
+    lock_until := now() + interval '30 minutes';
+    insert into public.daily_saul_locks (user_id, locked_until)
+    values (requesting_user, lock_until)
+    on conflict (user_id) do update set locked_until = excluded.locked_until;
+
+    return query select true, 0::integer, lock_until;
+    return;
+  end if;
+
   return query
     select true,
       greatest(5 - completed_count, 0)::integer,
-      case when completed_count >= 5
-        then coalesce(first_completion, now()) + interval '30 minutes'
-        else null::timestamptz
-      end;
+      null::timestamptz;
 end;
 $$;
 
